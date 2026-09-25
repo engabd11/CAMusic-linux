@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -65,7 +66,7 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
                 "Configure HueGhost in Settings — the daemon must be reachable over the LAN.",
                 color = TextMuted,
                 fontFamily = AppFont,
-                fontSize = 14.sp,
+                fontSize = PanelMetrics.Body,
                 modifier = Modifier.padding(32.dp),
             )
         }
@@ -103,7 +104,7 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
             color = TextPrimary,
             fontFamily = AppFont,
             fontWeight = FontWeight.Bold,
-            fontSize = 22.sp,
+            fontSize = PanelMetrics.PageTitle,
         )
 
         Row(
@@ -112,27 +113,34 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
-                Text("Sync", color = TextPrimary, fontFamily = AppFont, fontSize = 16.sp)
+                Text("Sync", color = TextPrimary, fontFamily = AppFont, fontSize = PanelMetrics.SectionTitle)
                 Text(
                     status?.let { s ->
                         if (s.running) "syncing · ${s.mode ?: "?"} · ${s.intensity ?: "?"}" else "not syncing"
                     } ?: "unreachable",
                     color = TextMuted,
                     fontFamily = AppFont,
-                    fontSize = 12.sp,
+                    fontSize = PanelMetrics.Meta,
                 )
             }
             if (busy) {
-                CircularProgressIndicator(Modifier.size(22.dp))
+                CircularProgressIndicator(Modifier.size(26.dp))
             } else {
-                Button(onClick = {
-                    busy = true
-                    scope.launch {
-                        runCatching { hg.toggle() }
-                        refresh()
-                    }
-                }) {
-                    Text(if (status?.running == true) "Stop" else "Start", fontFamily = AppFont)
+                Button(
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            runCatching { hg.toggle() }
+                            refresh()
+                        }
+                    },
+                    modifier = Modifier.heightIn(min = PanelMetrics.ButtonMinHeight),
+                ) {
+                    Text(
+                        if (status?.running == true) "Stop" else "Start",
+                        fontFamily = AppFont,
+                        fontSize = PanelMetrics.FieldLabel,
+                    )
                 }
             }
         }
@@ -171,12 +179,12 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
         val off = status?.offsetS ?: 0.0
         var offScrub by remember { mutableStateOf<Double?>(null) }
         Column {
-            Text("Offset (s)", color = TextPrimary, fontFamily = AppFont, fontSize = 15.sp)
+            Text("Offset (s)", color = TextPrimary, fontFamily = AppFont, fontSize = PanelMetrics.FieldLabel)
             Text(
                 "Trim the sync timing — negative pulls the lights earlier.",
                 color = TextMuted,
                 fontFamily = AppFont,
-                fontSize = 11.sp,
+                fontSize = PanelMetrics.Hint,
             )
             Slider(
                 value = (offScrub ?: off).toFloat(),
@@ -200,7 +208,7 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
                 "Following: $item",
                 color = TextMuted,
                 fontFamily = AppFont,
-                fontSize = 12.sp,
+                fontSize = PanelMetrics.Meta,
             )
         }
     }
@@ -215,22 +223,24 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
 @Composable
 private fun ModeRow(label: String, current: String?, options: List<String>, onPick: (String) -> Unit) {
     Column {
-        Text(label, color = TextPrimary, fontFamily = AppFont, fontSize = 15.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = TextPrimary, fontFamily = AppFont, fontSize = PanelMetrics.FieldLabel)
+        Row(horizontalArrangement = Arrangement.spacedBy(PanelMetrics.ChipGap)) {
             options.forEach { opt ->
                 val active = current.equals(opt, ignoreCase = true)
                 Row(
                     Modifier
+                        .heightIn(min = PanelMetrics.ChipMinHeight)
                         .clip(RoundedCornerShape(100.dp))
                         .background(if (active) Glass else androidx.compose.ui.graphics.Color.Transparent)
                         .clickable { onPick(opt) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = PanelMetrics.ChipPadH, vertical = PanelMetrics.ChipPadV),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         opt,
                         color = if (active) TextPrimary else TextMuted,
                         fontFamily = AppFont,
-                        fontSize = 13.sp,
+                        fontSize = PanelMetrics.ChipLabel,
                     )
                 }
             }

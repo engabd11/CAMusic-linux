@@ -60,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -269,32 +270,32 @@ private fun LibraryRoot(
                 color = TextPrimary,
                 fontFamily = AppFont,
                 fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
+                fontSize = PanelMetrics.PageTitle,
             )
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, "Search", tint = TextPrimary, modifier = Modifier.size(22.dp))
+                Icon(Icons.Default.Search, "Search", tint = TextPrimary, modifier = Modifier.size(26.dp))
             }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(PanelMetrics.ChipGap),
         ) {
             LibraryCategory.entries.forEach { c ->
                 val active = c == category
                 Row(
                     Modifier
-                        .heightIn(min = 40.dp)
+                        .heightIn(min = PanelMetrics.ChipMinHeight)
                         .clip(RoundedCornerShape(100.dp))
                         .background(if (active) Glass else Color.Transparent)
                         .clickable { onCategory(c) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = PanelMetrics.ChipPadH, vertical = PanelMetrics.ChipPadV),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         c.label,
                         color = if (active) TextPrimary else TextMuted,
                         fontFamily = AppFont,
-                        fontSize = 12.sp,
+                        fontSize = PanelMetrics.ChipLabel,
                     )
                 }
             }
@@ -304,7 +305,7 @@ private fun LibraryRoot(
                 error,
                 color = TextMuted,
                 fontFamily = AppFont,
-                fontSize = 12.sp,
+                fontSize = PanelMetrics.Body,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
         }
@@ -404,7 +405,7 @@ private fun FavoritesView(results: MaSearchResults?, onAlbum: (MaItem) -> Unit, 
                 "No favourites yet.",
                 color = TextMuted,
                 fontFamily = AppFont,
-                fontSize = 13.sp,
+                fontSize = PanelMetrics.Body,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
         }
@@ -422,7 +423,7 @@ private fun ItemShelf(title: String, items: List<MaItem>, onClick: (MaItem) -> U
             color = TextPrimary,
             fontFamily = AppFont,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 16.sp,
+            fontSize = PanelMetrics.SectionTitle,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
         )
         val rowState = rememberLazyListState()
@@ -433,7 +434,7 @@ private fun ItemShelf(title: String, items: List<MaItem>, onClick: (MaItem) -> U
             modifier = Modifier.fillMaxWidth().touchDragScroll(rowState, Orientation.Horizontal),
         ) {
             items(items, key = { it.itemId }) { item ->
-                Box(Modifier.width(140.dp)) { AlbumTile(item, onClick) }
+                Box(Modifier.width(160.dp)) { AlbumTile(item, onClick) }
             }
         }
     }
@@ -459,7 +460,7 @@ private fun AlbumTile(album: MaItem, onClick: (MaItem) -> Unit) {
             album.name,
             color = TextPrimary,
             fontFamily = AppFont,
-            fontSize = 13.sp,
+            fontSize = PanelMetrics.TileTitle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 6.dp),
@@ -468,7 +469,7 @@ private fun AlbumTile(album: MaItem, onClick: (MaItem) -> Unit) {
             album.subtitle ?: "",
             color = TextMuted,
             fontFamily = AppFont,
-            fontSize = 11.sp,
+            fontSize = PanelMetrics.TileSubtitle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -496,8 +497,8 @@ private fun AlbumDetailView(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .padding(start = 4.dp)
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(Glass),
             )
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -506,7 +507,7 @@ private fun AlbumDetailView(
                     color = TextPrimary,
                     fontFamily = AppFont,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
+                    fontSize = PanelMetrics.PageTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -514,16 +515,18 @@ private fun AlbumDetailView(
                     album.subtitle ?: "",
                     color = TextMuted,
                     fontFamily = AppFont,
-                    fontSize = 13.sp,
+                    fontSize = PanelMetrics.RowSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             Button(
                 onClick = { onPlay(0) },
-                modifier = Modifier.padding(end = 16.dp),
+                modifier = Modifier
+                    .padding(end = 16.dp)
+                    .heightIn(min = PanelMetrics.ButtonMinHeight),
             ) {
-                Text("Play album", fontFamily = AppFont)
+                Text("Play album", fontFamily = AppFont, fontSize = PanelMetrics.FieldLabel)
             }
         }
         val trackState = rememberLazyListState()
@@ -571,7 +574,7 @@ private fun ArtistDetailView(
                 color = TextPrimary,
                 fontFamily = AppFont,
                 fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
+                fontSize = PanelMetrics.PageTitle,
             )
         }
         val gridState = rememberLazyGridState()
@@ -615,10 +618,16 @@ private fun SearchView(
             TextField(
                 value = query,
                 onValueChange = onQuery,
-                placeholder = { Text("Search the library", fontFamily = AppFont) },
+                placeholder = {
+                    Text("Search the library", fontFamily = AppFont, fontSize = PanelMetrics.RowTitle)
+                },
+                textStyle = TextStyle(fontSize = PanelMetrics.RowTitle, fontFamily = AppFont),
                 singleLine = true,
                 colors = TextFieldDefaults.colors(),
-                modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = PanelMetrics.ButtonMinHeight)
+                    .padding(end = 16.dp),
             )
         }
         if (results != null) {
@@ -678,7 +687,7 @@ private fun SearchResultsSections(
                 "No results.",
                 color = TextMuted,
                 fontFamily = AppFont,
-                fontSize = 13.sp,
+                fontSize = PanelMetrics.Body,
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
         }
@@ -691,7 +700,7 @@ private fun SearchResultsSections(
                     color = TextPrimary,
                     fontFamily = AppFont,
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp,
+                    fontSize = PanelMetrics.SectionTitle,
                     modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
                 )
                 results.tracks.forEachIndexed { i, t ->
@@ -719,9 +728,9 @@ private fun TrackRow(
     Row(
         Modifier
             .fillMaxWidth()
-            // 48dp minimum — "a panel is touched, not clicked" (PlayerPane's own words);
-            // the old 10dp padding only reached ~44dp with this type scale.
-            .heightIn(min = 48.dp)
+            // The now-playing screen's row scale — the panel is read at arm's length,
+            // so rows give the hand 64dp and the eye 18/14sp (PanelMetrics).
+            .heightIn(min = PanelMetrics.RowMinHeight)
             .clickable { onClick() }
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -730,16 +739,16 @@ private fun TrackRow(
         Text(
             "$n",
             color = TextMuted,
-            fontSize = 12.sp,
+            fontSize = PanelMetrics.Meta,
             fontFamily = AppFont,
-            modifier = Modifier.width(24.dp),
+            modifier = Modifier.width(28.dp),
         )
         Column(Modifier.weight(1f)) {
             Text(
                 title,
                 color = TextPrimary,
                 fontFamily = AppFont,
-                fontSize = 14.sp,
+                fontSize = PanelMetrics.RowTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -748,7 +757,7 @@ private fun TrackRow(
                     artist,
                     color = TextMuted,
                     fontFamily = AppFont,
-                    fontSize = 11.sp,
+                    fontSize = PanelMetrics.RowSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -757,7 +766,7 @@ private fun TrackRow(
         Text(
             duration?.let { formatMsLocal(it * 1000L) } ?: "",
             color = TextMuted,
-            fontSize = 12.sp,
+            fontSize = PanelMetrics.Meta,
             fontFamily = AppFont,
         )
     }
@@ -770,7 +779,7 @@ private fun NotConnected(modifier: Modifier) {
             "Configure Jellyfin in Settings, then Apply.",
             color = TextMuted,
             fontFamily = AppFont,
-            fontSize = 14.sp,
+            fontSize = PanelMetrics.Body,
         )
     }
 }

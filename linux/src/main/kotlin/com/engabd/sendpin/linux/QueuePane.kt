@@ -76,7 +76,7 @@ fun QueuePane(modifier: Modifier, model: PanelModel) {
                 color = TextPrimary,
                 fontFamily = AppFont,
                 fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
+                fontSize = PanelMetrics.PageTitle,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 IconButton(onClick = { scope.launch { model.shuffleQueue() } }) {
@@ -94,7 +94,7 @@ fun QueuePane(modifier: Modifier, model: PanelModel) {
                     "Nothing queued — play an album from the library.",
                     color = TextMuted,
                     fontFamily = AppFont,
-                    fontSize = 14.sp,
+                    fontSize = PanelMetrics.Body,
                 )
             }
             return
@@ -134,8 +134,9 @@ private fun QueueRow(
     Row(
         Modifier
             .fillMaxWidth()
-            // 48dp minimum, same floor as TrackRow/TabStrip elsewhere on the panel.
-            .heightIn(min = 48.dp)
+            // 64dp rows at the now-playing screen's scale — the panel is touched and
+            // read at arm's length, not a phone's 48dp/14sp (PanelMetrics).
+            .heightIn(min = PanelMetrics.RowMinHeight)
             .clickable(onClick = onPlay)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -146,7 +147,7 @@ private fun QueueRow(
         // isn't one.
         Box(
             Modifier
-                .size(8.dp)
+                .size(10.dp)
                 .background(if (nowPlaying) TextPrimary else Glass, CircleShape),
         )
         Column(Modifier.weight(1f)) {
@@ -155,7 +156,7 @@ private fun QueueRow(
                 color = if (nowPlaying) TextPrimary else TextPrimary,
                 fontFamily = AppFont,
                 fontWeight = if (nowPlaying) FontWeight.Bold else FontWeight.Normal,
-                fontSize = 14.sp,
+                fontSize = PanelMetrics.RowTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -164,7 +165,7 @@ private fun QueueRow(
                     track.artist,
                     color = TextMuted,
                     fontFamily = AppFont,
-                    fontSize = 11.sp,
+                    fontSize = PanelMetrics.RowSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -173,12 +174,12 @@ private fun QueueRow(
         Text(
             formatMs(track.durationMs),
             color = TextMuted,
-            fontSize = 12.sp,
+            fontSize = PanelMetrics.Meta,
             fontFamily = AppFont,
-            modifier = Modifier.width(40.dp),
+            modifier = Modifier.width(44.dp),
         )
         IconButton(onClick = onRemove) {
-            Icon(Icons.Default.Close, "Remove from queue", tint = TextMuted)
+            Icon(Icons.Default.Close, "Remove from queue", tint = TextMuted, modifier = Modifier.size(24.dp))
         }
     }
 }

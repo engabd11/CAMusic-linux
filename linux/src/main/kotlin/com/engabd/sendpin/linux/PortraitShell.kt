@@ -477,7 +477,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
-            .height(64.dp)
+            .height(PanelMetrics.MiniBarHeight)
             .clip(RoundedCornerShape(16.dp))
             .background(Ink2)
             .border(1.dp, HairlineSoft, RoundedCornerShape(16.dp))
@@ -498,7 +498,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
     ) {
         // Thumbnail.
         Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(Glass),
+            Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(Glass),
             contentAlignment = Alignment.Center,
         ) {
             val art = track?.artUrl
@@ -510,7 +510,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
-                Text("♪", color = TextMuted, fontSize = 18.sp, fontFamily = AppFont)
+                Text("♪", color = TextMuted, fontSize = 20.sp, fontFamily = AppFont)
             }
         }
 
@@ -521,7 +521,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                 color = if (track == null) TextSecondary else TextPrimary,
                 fontFamily = AppFont,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
+                fontSize = PanelMetrics.RowTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -529,7 +529,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                 track?.artist ?: "Queue an album from the library",
                 color = TextMuted,
                 fontFamily = AppFont,
-                fontSize = 12.sp,
+                fontSize = PanelMetrics.RowSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -539,7 +539,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                     "($device)",
                     color = TextFaint,
                     fontFamily = AppFont,
-                    fontSize = 10.sp,
+                    fontSize = PanelMetrics.Meta,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -550,16 +550,16 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
         // a plain tap-to-open target instead of offering dead buttons.
         if (track != null) {
             Box(
-                Modifier.size(40.dp).clip(CircleShape).clickable {
+                Modifier.size(48.dp).clip(CircleShape).clickable {
                     scope.launch { model.previous() }
                 },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Default.SkipPrevious, "Previous", tint = TextSecondary, modifier = Modifier.size(26.dp))
+                Icon(Icons.Default.SkipPrevious, "Previous", tint = TextSecondary, modifier = Modifier.size(30.dp))
             }
             Box(
                 Modifier
-                    .size(48.dp)
+                    .size(56.dp)
                     .clip(CircleShape)
                     .background(accent)
                     .clickable { scope.launch { model.togglePause() } },
@@ -569,16 +569,16 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                     if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                     if (playing) "Pause" else "Play",
                     tint = Ink,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(28.dp),
                 )
             }
             Box(
-                Modifier.size(40.dp).clip(CircleShape).clickable {
+                Modifier.size(48.dp).clip(CircleShape).clickable {
                     scope.launch { model.next() }
                 },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Default.SkipNext, "Next", tint = TextSecondary, modifier = Modifier.size(26.dp))
+                Icon(Icons.Default.SkipNext, "Next", tint = TextSecondary, modifier = Modifier.size(30.dp))
             }
         }
     }
@@ -596,7 +596,7 @@ private fun PortraitNavBar(model: PanelModel, selected: PanelTab, on: (PanelTab)
     val accent = rememberAccent()
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().height(64.dp),
+            Modifier.fillMaxWidth().height(PanelMetrics.NavHeight),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PanelTab.entries.forEach { t ->
@@ -610,13 +610,13 @@ private fun PortraitNavBar(model: PanelModel, selected: PanelTab, on: (PanelTab)
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Icon(iconFor(t), t.label, tint = tint, modifier = Modifier.size(22.dp))
+                    Icon(iconFor(t), t.label, tint = tint, modifier = Modifier.size(26.dp))
                     Text(
                         t.label,
                         color = tint,
                         fontFamily = AppFont,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                        fontSize = 10.sp,
+                        fontSize = PanelMetrics.NavLabel,
                         maxLines = 1,
                     )
                 }
@@ -627,7 +627,7 @@ private fun PortraitNavBar(model: PanelModel, selected: PanelTab, on: (PanelTab)
                 status,
                 color = TextFaint,
                 fontFamily = AppFont,
-                fontSize = 9.sp,
+                fontSize = PanelMetrics.NavStatus,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,

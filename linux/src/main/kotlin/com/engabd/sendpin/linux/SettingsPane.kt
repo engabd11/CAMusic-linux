@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -87,7 +90,7 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
             color = TextPrimary,
             fontFamily = AppFont,
             fontWeight = FontWeight.Bold,
-            fontSize = 22.sp,
+            fontSize = PanelMetrics.PageTitle,
         )
 
         Section("MPD")
@@ -127,11 +130,12 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
                 "Report to Jellyfin while MPD plays",
                 color = TextPrimary,
                 fontFamily = AppFont,
-                fontSize = 15.sp,
+                fontSize = PanelMetrics.FieldLabel,
             )
             Switch(
                 checked = report,
                 onCheckedChange = { v -> scope.launch { settings.setReportToJellyfin(v) } },
+                modifier = Modifier.size(48.dp),
             )
         }
         ChipRow("Layout mode", current = layout, options = listOf("landscape", "portrait")) { mode ->
@@ -160,28 +164,32 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
                 "Blur behind glass surfaces",
                 color = TextPrimary,
                 fontFamily = AppFont,
-                fontSize = 15.sp,
+                fontSize = PanelMetrics.FieldLabel,
             )
             Switch(
                 checked = glassBlur,
                 onCheckedChange = { v -> scope.launch { settings.setGlassBlur(v) } },
+                modifier = Modifier.size(48.dp),
             )
         }
 
         HorizontalDivider(color = Ink2)
 
-        Button(onClick = {
-            scope.launch {
-                settings.setMpdAddress(mpdField)
-                settings.setJfUrl(jfField)
-                settings.setJfToken(tokenField)
-                settings.setJellyfinPathPrefix(prefixField)
-                settings.setHueGhostUrl(hgField)
-                settings.setHueGhostToken(hgTokenField)
-                model.reconnect()
-            }
-        }) {
-            Text("Apply", fontFamily = AppFont)
+        Button(
+            onClick = {
+                scope.launch {
+                    settings.setMpdAddress(mpdField)
+                    settings.setJfUrl(jfField)
+                    settings.setJfToken(tokenField)
+                    settings.setJellyfinPathPrefix(prefixField)
+                    settings.setHueGhostUrl(hgField)
+                    settings.setHueGhostToken(hgTokenField)
+                    model.reconnect()
+                }
+            },
+            modifier = Modifier.heightIn(min = PanelMetrics.ButtonMinHeight),
+        ) {
+            Text("Apply", fontFamily = AppFont, fontSize = PanelMetrics.FieldLabel)
         }
         Hint("Applies without a restart — the clients are rebuilt from these values.")
 
@@ -194,8 +202,9 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
         Button(
             onClick = { kotlin.system.exitProcess(0) },
             colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFFB3261E)),
+            modifier = Modifier.heightIn(min = PanelMetrics.ButtonMinHeight),
         ) {
-            Text("Quit", fontFamily = AppFont)
+            Text("Quit", fontFamily = AppFont, fontSize = PanelMetrics.FieldLabel)
         }
     }
         VerticalScrollbar(
@@ -212,24 +221,27 @@ private fun Section(title: String) {
         color = TextPrimary,
         fontFamily = AppFont,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
+        fontSize = PanelMetrics.SectionTitle,
     )
 }
 
 @Composable
 private fun Hint(text: String) {
-    Text(text, color = TextMuted, fontFamily = AppFont, fontSize = 11.sp)
+    Text(text, color = TextMuted, fontFamily = AppFont, fontSize = PanelMetrics.Hint)
 }
 
 @Composable
 private fun Field(label: String, value: String, onChange: (String) -> Unit) {
     Column {
-        Text(label, color = TextMuted, fontFamily = AppFont, fontSize = 11.sp)
+        Text(label, color = TextMuted, fontFamily = AppFont, fontSize = PanelMetrics.Meta)
         TextField(
             value = value,
             onValueChange = onChange,
             singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+            textStyle = TextStyle(fontSize = PanelMetrics.RowTitle, fontFamily = AppFont),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = PanelMetrics.ButtonMinHeight),
         )
     }
 }
@@ -237,22 +249,24 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit) {
 @Composable
 private fun ChipRow(label: String, current: String, options: List<String>, onPick: (String) -> Unit) {
     Column {
-        Text(label, color = TextPrimary, fontFamily = AppFont, fontSize = 15.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = TextPrimary, fontFamily = AppFont, fontSize = PanelMetrics.FieldLabel)
+        Row(horizontalArrangement = Arrangement.spacedBy(PanelMetrics.ChipGap)) {
             options.forEach { opt ->
                 val active = current.equals(opt, ignoreCase = true)
                 Row(
                     Modifier
+                        .heightIn(min = PanelMetrics.ChipMinHeight)
                         .clip(RoundedCornerShape(100.dp))
                         .background(if (active) Glass else Color.Transparent)
                         .clickable { onPick(opt) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = PanelMetrics.ChipPadH, vertical = PanelMetrics.ChipPadV),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         opt,
                         color = if (active) TextPrimary else TextMuted,
                         fontFamily = AppFont,
-                        fontSize = 13.sp,
+                        fontSize = PanelMetrics.ChipLabel,
                     )
                 }
             }

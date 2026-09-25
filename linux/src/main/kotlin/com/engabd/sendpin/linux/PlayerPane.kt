@@ -106,13 +106,14 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             }
         }
 
-        // Title block
+        // Title block — the now-playing scale (PanelMetrics): the cover's 32/17 rhythm
+        // applies to the landscape pane's title block too.
         Text(
             queue.getOrNull(index)?.title ?: "Nothing playing",
             color = TextPrimary,
             fontFamily = AppFont,
             fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-            fontSize = 20.sp,
+            fontSize = 28.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -120,7 +121,7 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             queue.getOrNull(index)?.artist ?: "Queue an album from the library",
             color = TextSecondary,
             fontFamily = AppFont,
-            fontSize = 14.sp,
+            fontSize = PanelMetrics.RowSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -137,8 +138,8 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             modifier = Modifier.fillMaxWidth(),
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatMs(posMs), color = TextMuted, fontSize = 11.sp, fontFamily = AppFont)
-            Text(formatMs(durMs), color = TextMuted, fontSize = 11.sp, fontFamily = AppFont)
+            Text(formatMs(posMs), color = TextMuted, fontSize = PanelMetrics.Meta, fontFamily = AppFont)
+            Text(formatMs(durMs), color = TextMuted, fontSize = PanelMetrics.Meta, fontFamily = AppFont)
         }
 
         // Transport row
@@ -162,7 +163,7 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             Text(
                 "MPD → ${state?.outputDeviceName ?: ""} · ${fmtRate(out.sampleRateHz)}/${out.bitDepth}",
                 color = TextMuted,
-                fontSize = 11.sp,
+                fontSize = PanelMetrics.Meta,
                 fontFamily = AppFont,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),

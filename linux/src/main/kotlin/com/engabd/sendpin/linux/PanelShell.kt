@@ -123,13 +123,13 @@ private fun TabStrip(
             val active = t == selected
             Row(
                 Modifier
-                    // 48dp minimum — the old 9dp padding only reached ~36dp against the
-                    // 18dp icon; PlayerPane's transport row already gets this right.
-                    .heightIn(min = 48.dp)
+                    // The panel's chip floor (PanelMetrics) — 48dp, like the library
+                    // category chips; the old 9dp padding only reached ~36dp.
+                    .heightIn(min = PanelMetrics.ChipMinHeight)
                     .clip(RoundedCornerShape(100.dp))
                     .background(if (active) Glass else Color.Transparent)
                     .clickable { on(t) }
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -142,14 +142,14 @@ private fun TabStrip(
                     },
                     contentDescription = t.label,
                     tint = if (active) TextPrimary else TextMuted,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(22.dp),
                 )
                 Text(
                     t.label,
                     color = if (active) TextPrimary else TextMuted,
                     fontFamily = AppFont,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                    fontSize = 13.sp,
+                    fontSize = PanelMetrics.ChipLabel,
                 )
             }
         }
@@ -158,7 +158,7 @@ private fun TabStrip(
             status,
             color = TextMuted,
             fontFamily = AppFont,
-            fontSize = 11.sp,
+            fontSize = PanelMetrics.NavStatus,
             maxLines = 1,
         )
     }
