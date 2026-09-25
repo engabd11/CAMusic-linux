@@ -5,6 +5,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
@@ -13,6 +14,26 @@ import androidx.compose.ui.window.rememberWindowState
 import com.engabd.sendpin.ui.theme.AccentChoice
 import com.engabd.sendpin.ui.theme.SendspinTheme
 import com.engabd.sendpin.ui.theme.ThemeChoice
+import java.awt.GraphicsEnvironment
+
+/**
+ * The panel's real pixel size, read from the X server's own idea of the display mode.
+ * `1280x800` stays only as the fallback — for a headless environment where
+ * `GraphicsEnvironment` throws (`HeadlessException`, which this Windows dev box hits every
+ * time), or for the rare case the API can't tell and returns a non-positive width/height
+ * instead of throwing. Previously this was hardcoded 1280x800 — fine for the one panel it
+ * was built on, wrong and unfixable-from-the-screen for any other, since `undecorated =
+ * true` at (0,0) means a wrong size just clips content or leaves a void, with no window
+ * chrome to resize it from.
+ */
+private fun panelSize(): Pair<Dp, Dp> {
+    return try {
+        val mode = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.displayMode
+        if (mode.width > 0 && mode.height > 0) mode.width.dp to mode.height.dp else 1280.dp to 800.dp
+    } catch (_: Exception) {
+        1280.dp to 800.dp
+    }
+}
 
 fun main() = application {
     val settings = remember { LinuxSettings(LinuxSettings.defaultPath()) }
@@ -26,6 +47,7 @@ fun main() = application {
     val theme by settings.themeChoice.collectAsState(initial = "dark")
     val glassBlur by settings.glassBlur.collectAsState(initial = true)
 
+    val (panelWidth, panelHeight) = remember { panelSize() }
     Window(
         onCloseRequest = ::exitApplication,
         title = "CAMusic for Linux",
@@ -33,8 +55,8 @@ fun main() = application {
         // must place itself: undecorated at (0,0), exactly the panel's size —
         // the plan's "undecorated/fullscreen for the panel". No voids, no bar.
         state = rememberWindowState(
-            width = 1280.dp,
-            height = 800.dp,
+            width = panelWidth,
+            height = panelHeight,
             position = WindowPosition(0.dp, 0.dp),
         ),
         undecorated = true,
