@@ -30,6 +30,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.engabd.sendpin.linux.ui.OnScreenKeyboard
+import com.engabd.sendpin.linux.ui.OnScreenKeyboardKey
+import com.engabd.sendpin.linux.ui.applyKey
 import com.engabd.sendpin.linux.ui.touchDragScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -52,7 +55,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -415,16 +417,15 @@ private fun SearchView(
                 placeholder = { Text("Search the library", fontFamily = AppFont) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 16.dp)
-                    .onFocusEvent { e -> if (e.isFocused) launchOnScreenKeyboard() },
+                modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
             )
         }
         val found = results?.albums ?: emptyList()
         if (results != null) {
+            // The results list shrinks to fit above the keyboard rather than sliding
+            // under it — weight(1f) here leaves the keyboard below its own fixed size.
             val gridState = rememberLazyGridState()
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxWidth().weight(1f)) {
                 LazyVerticalGrid(
                     state = gridState,
                     columns = GridCells.Fixed(6),
@@ -441,6 +442,16 @@ private fun SearchView(
                 )
             }
         }
+        // This panel is touch-only with no window manager and no way to run a system
+        // on-screen keyboard (see OnScreenKeyboard.kt's doc comment for why that was tried
+        // and abandoned) — so search draws its own keyboard, directly below the results,
+        // only while this pane is showing.
+        OnScreenKeyboard(
+            onKey = { c -> onQuery(applyKey(query, OnScreenKeyboardKey.Char(c))) },
+            onBackspace = { onQuery(applyKey(query, OnScreenKeyboardKey.Backspace)) },
+            onClear = { onQuery(applyKey(query, OnScreenKeyboardKey.Clear)) },
+            onDone = onBack,
+        )
     }
 }
 
@@ -514,25 +525,4 @@ private fun NotConnected(modifier: Modifier) {
 private fun formatMsLocal(ms: Long): String {
     val s = ms / 1000
     return "%d:%02d".format(s / 60, s % 60)
-}
-
-/**
- * Simple version of item 2: this panel is touch-only, so a `TextField` gaining focus is
- * useless without something drawing keys. Rather than build an in-app keypad, shell out to
- * whichever on-screen keyboard the image ships — `squeekboard` (the GNOME/Phosh one, the
- * more likely fit for a small touch panel) tried first, `onboard` (the older GTK one) as the
- * fallback. Both toggle their own visibility on a second launch/DBus call in practice, but
- * `ProcessBuilder.start()` here is fire-and-forget: if neither binary is on PATH this no-ops
- * silently rather than crashing the panel, which matters more than surfacing the failure —
- * there's no dialog to surface it to (see item 3, `undecorated` has no chrome at all).
- */
-private fun launchOnScreenKeyboard() {
-    for (cmd in listOf("squeekboard", "onboard")) {
-        try {
-            ProcessBuilder(cmd).start()
-            return
-        } catch (_: Exception) {
-            // Not installed / not on PATH — try the next one.
-        }
-    }
 }
