@@ -5,6 +5,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -15,6 +17,7 @@ import com.engabd.sendpin.ui.theme.AccentChoice
 import com.engabd.sendpin.ui.theme.SendspinTheme
 import com.engabd.sendpin.ui.theme.ThemeChoice
 import java.awt.GraphicsEnvironment
+import org.jetbrains.skia.Image
 
 /**
  * The panel's real pixel size, read from the X server's own idea of the display mode.
@@ -41,6 +44,13 @@ fun main() = application {
     // Clients built from settings; the 1 Hz poll loop starts here.
     LaunchedEffect(Unit) { model.start() }
 
+    // The CAMusic mark (the original repo's docs/app-icon.png) on the window itself —
+    // undecorated on a bare X server has no taskbar, but anything listing windows
+    // (KWin's panel, xdotool) otherwise shows Compose's default coffee cup.
+    val icon = remember {
+        javaClass.getResourceAsStream("/icon.png")?.readBytes()
+    }
+
     val layout by settings.layoutMode.collectAsState(initial = "landscape")
     val accent by settings.accentChoice.collectAsState(initial = "album")
     val fixed by settings.accentFixed.collectAsState(initial = 0xFF8AB4F8.toInt())
@@ -59,6 +69,7 @@ fun main() = application {
             height = panelHeight,
             position = WindowPosition(0.dp, 0.dp),
         ),
+        icon = icon?.let { bytes -> BitmapPainter(Image.makeFromEncoded(bytes).toComposeImageBitmap()) },
         undecorated = true,
         resizable = false,
     ) {
