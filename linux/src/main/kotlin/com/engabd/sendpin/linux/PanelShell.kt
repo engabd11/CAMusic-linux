@@ -60,11 +60,10 @@ enum class PanelTab(val label: String) {
     LIBRARY("Library"), QUEUE("Queue"), LIGHTS("Lights"), SETTINGS("Settings")
 }
 
-/** The player pane's share, landscape — the library gets the rest. CarShell's ratio. */
+/**
+ * The player pane's share, landscape — the library gets the rest. CarShell's ratio.
+ */
 private const val PLAYER_WEIGHT_WIDE = 0.42f
-
-/** The player's share when stacked. Lists gain more from height than art does. */
-private const val PLAYER_WEIGHT_TALL = 0.45f
 
 /**
  * The panel's shell — two panes, no navigation stack, modelled on CarShell
@@ -73,7 +72,7 @@ private const val PLAYER_WEIGHT_TALL = 0.45f
  * read from Settings — no orientation detection, per the plan.
  *
  * Landscape: album art + transport left, tab strip + panel content right.
- * Portrait: player on top, tabs + panel content below.
+ * Portrait: the overlay shell (PortraitShell) — full-screen cover over tabs.
  */
 @Composable
 fun PanelShell(model: PanelModel, layoutMode: LayoutMode) {
@@ -97,21 +96,10 @@ fun PanelShell(model: PanelModel, layoutMode: LayoutMode) {
                         }
                     }
                 }
-                LayoutMode.PORTRAIT -> Column(Modifier.fillMaxSize()) {
-                    PlayerPane(Modifier.weight(PLAYER_WEIGHT_TALL).fillMaxWidth(), model = model)
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(Glass))
-                    Column(Modifier.weight(1f - PLAYER_WEIGHT_TALL).fillMaxWidth()) {
-                        TabStrip(Modifier.fillMaxWidth(), model = model, selected = tab, on = { tab = it })
-                        Box(Modifier.fillMaxSize()) {
-                            when (tab) {
-                                PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model)
-                                PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
-                                PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
-                                PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
-                            }
-                        }
-                    }
-                }
+                // Portrait is the overlay shell: the now-playing cover IS the screen,
+                // swiped down to reveal tabs + mini bar + bottom nav (PortraitShell
+                // owns its tab state — the shared `tab` above is the landscape strip's).
+                LayoutMode.PORTRAIT -> PortraitShell(model)
             }
         }
     }

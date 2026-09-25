@@ -197,5 +197,6 @@ internal fun formatMs(ms: Long): String {
     return "%d:%02d".format(s / 60, s % 60)
 }
 
-private fun fmtRate(hz: Int): String =
+// internal: PortraitShell's cover shows the same readout — one helper, no drift.
+internal fun fmtRate(hz: Int): String =
     if (hz == 0) "—" else "${hz / 1000.0}".let { if (it.length > 5) it.take(5) else it } + "k"
