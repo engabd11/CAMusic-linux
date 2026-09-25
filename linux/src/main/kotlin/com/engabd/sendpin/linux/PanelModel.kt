@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -41,13 +42,17 @@ class PanelModel(val settings: LinuxSettings) {
     /** Status line for the panes: what is connected and what is not. */
     val statusLine = MutableStateFlow("")
 
+    // Clients as StateFlows so panes recompose the moment they come up — a plain
+    // var set after first composition is invisible to Compose (the Library tab
+    // sat on "Configure Jellyfin" with a healthy client because of exactly that).
+    private val _source = MutableStateFlow<JellyfinSource?>(null)
+    val source: StateFlow<JellyfinSource?> = _source
+    private val _hueGhost = MutableStateFlow<HueGhostClient?>(null)
+    val hueGhost: StateFlow<HueGhostClient?> = _hueGhost
+
     private var mpd: MpdClient? = null
     private var remote: MpdRemote? = null
     private var jellyfin: JellyfinClient? = null
-    var source: JellyfinSource? = null
-        private set
-    var hueGhost: HueGhostClient? = null
-        private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pollJob: kotlinx.coroutines.Job? = null
@@ -108,13 +113,16 @@ class PanelModel(val settings: LinuxSettings) {
                     libraryId = jfLibV,
                     deviceId = settings.deviceId.first(),
                 )
+                // The browse pane reads through this — without it the Library tab
+                // sits on "Configure Jellyfin" even with a healthy client.
+                _source.value = JellyfinSource(jellyfin!!)
                 val jfErr = jellyfin?.pingError()
                 statusLine.value = (statusLine.value + "  ·  " +
                     if (jfErr == null) "Jellyfin connected" else "Jellyfin: $jfErr")
             }
 
             if (hgUrlV.isNotBlank()) {
-                hueGhost = HueGhostClient(hgUrlV, hgTokV)
+                _hueGhost.value = HueGhostClient(hgUrlV, hgTokV)
             }
 
             // The 1 Hz poll: transport truth, then the reporter. This is the loop

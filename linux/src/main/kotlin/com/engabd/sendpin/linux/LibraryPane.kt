@@ -74,7 +74,8 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun LibraryPane(modifier: Modifier, model: PanelModel) {
-    val source = model.source ?: return NotConnected(modifier)
+    val sourceFlow by model.source.collectAsState()
+    val source = sourceFlow ?: return NotConnected(modifier)
     val scope = rememberCoroutineScope()
 
     // Root shows the albums grid; an open album or artist replaces it; search overlays.

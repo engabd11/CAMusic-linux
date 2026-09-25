@@ -20,6 +20,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,10 +51,10 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun LightsPane(modifier: Modifier, model: PanelModel) {
-    val hg = model.hueGhost
+    val hgC = model.hueGhost.collectAsState().value
     val scope = rememberCoroutineScope()
 
-    if (hg == null || !hg.isConfigured()) {
+    if (hgC == null || !hgC.isConfigured()) {
         Box(modifier, contentAlignment = Alignment.Center) {
             Text(
                 "Configure HueGhost in Settings — the daemon must be reachable over the LAN.",
@@ -65,6 +66,8 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
         }
         return
     }
+
+    val hg = hgC!!
 
     var status by remember { mutableStateOf<HueGhostClient.Status?>(null) }
     var busy by remember { mutableStateOf(false) }
