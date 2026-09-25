@@ -297,10 +297,9 @@ private fun NowPlayingCover(
                     .background(Hairline)
             )
 
-            // Top gap — matches the halved art→badge gap below (20dp + the
-            // column's spacing ≈ 48px), so the cover floats between them rather
-            // than welding itself to the drag handle.
-            Spacer(Modifier.fillMaxWidth().height(20.dp))
+            // Top gap — generous headroom above the cover: the art floats well clear of
+            // the drag handle rather than hugging it.
+            Spacer(Modifier.fillMaxWidth().height(36.dp))
 
             // The album, as large as the screen allows — an explicit square, as wide as
             // the screen, packing directly under the handle. The band does NOT take
@@ -380,38 +379,39 @@ private fun NowPlayingCover(
                 Text(formatMs(posMs), color = TextMuted, fontSize = 11.sp, fontFamily = AppFont)
                 Text(formatMs(durMs), color = TextMuted, fontSize = 11.sp, fontFamily = AppFont)
             }
-
-            // Transport — the accent carries the play circle, as on the phone, and
-            // the whole row is scaled up so it fills its band: skips at 64dp,
-            // play at 88dp with a 44dp glyph.
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CoverButton(Icons.Default.SkipPrevious, "Previous", 64.dp, 32.dp) {
-                    scope.launch { model.previous() }
-                }
-                Box(
-                    Modifier
-                        .padding(horizontal = 10.dp)
-                        .size(88.dp)
-                        .clip(CircleShape)
-                        .background(accent)
-                        .clickable { scope.launch { model.togglePause() } },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        if (playing) "Pause" else "Play",
-                        tint = Ink,
-                        modifier = Modifier.size(44.dp),
-                    )
-                }
-                CoverButton(Icons.Default.SkipNext, "Next", 64.dp, 32.dp) {
-                    scope.launch { model.next() }
-                }
-            }
+            // Transport — the accent carries the play circle, as on the phone. Skips are
+                        // pushed well out from the play circle so a hurried thumb cannot hit
+                        // the wrong one (≈42dp between visible edges); the row's horizontal
+                        // padding is halved to cancel the column's spacing so the spread is
+                        // exactly what is chosen here.
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CoverButton(Icons.Default.SkipPrevious, "Previous", 64.dp, 32.dp) {
+                                scope.launch { model.previous() }
+                            }
+                            Box(
+                                Modifier
+                                    .padding(horizontal = 28.dp)
+                                    .size(92.dp)
+                                    .clip(CircleShape)
+                                    .background(accent)
+                                    .clickable { scope.launch { model.togglePause() } },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    if (playing) "Pause" else "Play",
+                                    tint = Ink,
+                                    modifier = Modifier.size(46.dp),
+                                )
+                            }
+                            CoverButton(Icons.Default.SkipNext, "Next", 64.dp, 32.dp) {
+                                scope.launch { model.next() }
+                            }
+                        }
             // The column's leftover height pools here, under the transport —
             // invisible on the OLED black, and it keeps the packed upper stack
             // from over-flowing the screen on a small cover band.
