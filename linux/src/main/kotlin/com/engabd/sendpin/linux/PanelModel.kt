@@ -125,20 +125,46 @@ class PanelModel(val settings: LinuxSettings) {
                 _hueGhost.value = HueGhostClient(hgUrlV, hgTokV)
             }
 
-            // The 1 Hz poll: transport truth, then the reporter. This is the loop
-            // whose ~3 s tick HueGhost's 15 s music timeout depends on.
+            // The 1 Hz poll: transport truth, then the reporter, then the queue
+            // itself. This is the loop whose ~3 s tick HueGhost's 15 s music
+            // timeout depends on.
             while (scope.isActive) {
                 val s = remote?.poll()
                 state.value = s
                 if (settings.reportToJellyfin.first()) {
                     runCatching { reporter.onState(s, System.currentTimeMillis()) }
                 }
+                reconcileQueueFromMpd()
                 delay(1_000)
             }
         }
     }
 
     private fun hgUrlOr(v: String) = v
+
+    /**
+     * Re-sync `queue` to MPD's own queue order/membership every poll tick — this is what
+     * lets QueuePane fire a remove/move/shuffle/clear and never touch `queue.value`
+     * itself, per the app's established convention of correcting the UI from the source
+     * of truth rather than maintaining a second copy of it.
+     *
+     * [MpdClient.queueTracks] rebuilds each entry from MPD's own metadata, whose `itemId`
+     * is the MPD file path, not the Jellyfin id [LocalTrack.id] needs to be for session
+     * reporting ([trackIdAt]/[SessionReporter]) to keep naming the right item. So this
+     * does not rebuild [LocalTrack]s from MPD's answer — it re-orders and filters the
+     * panel's *existing* list (built with the real Jellyfin identity by [playAlbum]) to
+     * match what MPD reports, keyed on [LocalTrack.scrobbleId] (the MPD path both sides
+     * agree on). A track MPD no longer has is dropped; nothing is guessed back in.
+     */
+    private suspend fun reconcileQueueFromMpd() {
+        val client = mpd ?: return
+        val mpdOrder = try {
+            client.queueTracks().map { it.itemId }
+        } catch (e: Exception) {
+            return
+        }
+        queue.value = reorderQueue(queue.value, mpdOrder)
+    }
 
     /** Rebuild everything from the (just-saved) settings — Settings pane's Apply. */
     fun reconnect() = start()
@@ -154,6 +180,17 @@ class PanelModel(val settings: LinuxSettings) {
     suspend fun next() = remote?.next() ?: Unit
     suspend fun previous() = remote?.previous() ?: Unit
     suspend fun seekTo(ms: Long) = remote?.seekTo(ms) ?: Unit
+
+    // ── Queue editing (QueuePane) ──────────────────────────────────────────
+    // Same fire-and-let-the-poll-reconcile shape as the transport calls above:
+    // send MPD the edit and don't touch `queue.value` here at all.
+    // reconcileQueueFromMpd(), called every poll tick, is what actually
+    // resyncs it — see that function's doc comment for why it re-orders the
+    // existing list instead of rebuilding it from MPD's answer directly.
+    suspend fun removeFromQueue(index: Int) = remote?.removeAt(index) ?: Unit
+    suspend fun moveInQueue(from: Int, to: Int) = remote?.move(from, to) ?: Unit
+    suspend fun shuffleQueue() = remote?.shuffleQueue() ?: Unit
+    suspend fun clearQueue() = remote?.clear() ?: Unit
 
     /**
      * Queue a Jellyfin album through MPD: resolve every item's file path, map to
@@ -183,4 +220,15 @@ class PanelModel(val settings: LinuxSettings) {
         queue.value = queueTracks
         remote!!.setQueue(queueTracks, startIndex)
     }
+}
+
+/**
+ * The pure half of [PanelModel.reconcileQueueFromMpd]: given the panel's own queue (which
+ * carries the real Jellyfin identity — see that function's doc comment for why this
+ * re-orders rather than rebuilds) and the file-path order MPD reports, re-order and filter
+ * to match. `internal` so `kotlin.test` can cover it without a running MPD.
+ */
+internal fun reorderQueue(current: List<LocalTrack>, mpdOrder: List<String>): List<LocalTrack> {
+    val byMpdPath = current.associateBy { it.scrobbleId }
+    return mpdOrder.mapNotNull { byMpdPath[it] }
 }

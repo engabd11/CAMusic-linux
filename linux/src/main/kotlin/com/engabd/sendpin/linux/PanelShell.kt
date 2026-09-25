@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Settings
@@ -54,8 +55,10 @@ enum class LayoutMode { LANDSCAPE, PORTRAIT;
     }
 }
 
-/** The three panes the right side (or bottom half) can hold. */
-enum class PanelTab(val label: String) { LIBRARY("Library"), LIGHTS("Lights"), SETTINGS("Settings") }
+/** The four panes the right side (or bottom half) can hold. */
+enum class PanelTab(val label: String) {
+    LIBRARY("Library"), QUEUE("Queue"), LIGHTS("Lights"), SETTINGS("Settings")
+}
 
 /** The player pane's share, landscape — the library gets the rest. CarShell's ratio. */
 private const val PLAYER_WEIGHT_WIDE = 0.42f
@@ -87,6 +90,7 @@ fun PanelShell(model: PanelModel, layoutMode: LayoutMode) {
                         Box(Modifier.fillMaxSize()) {
                             when (tab) {
                                 PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model)
+                                PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
                                 PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
                                 PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
                             }
@@ -101,6 +105,7 @@ fun PanelShell(model: PanelModel, layoutMode: LayoutMode) {
                         Box(Modifier.fillMaxSize()) {
                             when (tab) {
                                 PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model)
+                                PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
                                 PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
                                 PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
                             }
@@ -143,6 +148,7 @@ private fun TabStrip(
                 Icon(
                     when (t) {
                         PanelTab.LIBRARY -> Icons.Default.LibraryMusic
+                        PanelTab.QUEUE -> Icons.AutoMirrored.Filled.QueueMusic
                         PanelTab.LIGHTS -> Icons.Default.Lightbulb
                         PanelTab.SETTINGS -> Icons.Default.Settings
                     },
