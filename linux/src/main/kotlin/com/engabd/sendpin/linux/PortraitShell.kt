@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -296,16 +297,25 @@ private fun NowPlayingCover(
                     .background(Hairline)
             )
 
-            // The album, as large as the screen allows. Fit, never Crop — a square
-            // cover inside a taller box letterboxes rather than losing artwork.
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            // Top gap — matches the halved art→badge gap below (20dp + the
+            // column's spacing ≈ 48px), so the cover floats between them rather
+            // than welding itself to the drag handle.
+            Spacer(Modifier.fillMaxWidth().height(20.dp))
+
+            // The album, as large as the screen allows — an explicit square, as wide as
+            // the screen, packing directly under the handle. The band does NOT take
+            // the column's leftover height (weighting it letterboxed the art and
+            // left half a cover-height of air beneath it); the square's height IS
+            // its width. The gap under the art is then explicit — see the spacer
+            // below — set to half what the letterbox used to leave.
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val art = track?.artUrl
                 if (art != null) {
                     coil3.compose.AsyncImage(
                         model = art,
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxWidth().aspectRatio(1f),
                     )
                 } else {
                     Text(
@@ -317,23 +327,30 @@ private fun NowPlayingCover(
                 }
             }
 
+            // Half the letterbox gap the old weighted band left: the art → badge space is
+            // now an explicit 20dp (the column's 14dp spacing + 6dp here, ~48px on
+            // this panel) instead of ~95px of letterbox air. Everything below
+            // sits proportionally closer to the cover.
+            Spacer(Modifier.fillMaxWidth().height(20.dp))
+
             // The quality badge — what MPD is actually decoding, in the album's accent:
             // codec + rate/depth (+ live bitrate), lit up on hi-res. Sits between
             // the cover and the title, exactly where the phone's overlay puts it.
             MpdQualityBadge(track = track, outputFormat = state?.outputFormat)
 
-            // Title block — centred now, the overlay's own arrangement.
+            // Title block — centred, the overlay's own arrangement. Title and artist
+            // are sized to *fill* the space under the cover, not just sit in it.
             Column(
                 Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
                     track?.title ?: "Nothing playing",
                     color = TextPrimary,
                     fontFamily = AppFont,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 32.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -342,7 +359,7 @@ private fun NowPlayingCover(
                     track?.artist ?: "Queue an album from the library",
                     color = TextSecondary,
                     fontFamily = AppFont,
-                    fontSize = 15.sp,
+                    fontSize = 17.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -364,19 +381,21 @@ private fun NowPlayingCover(
                 Text(formatMs(durMs), color = TextMuted, fontSize = 11.sp, fontFamily = AppFont)
             }
 
-            // Transport — the accent carries the play circle, as on the phone.
+            // Transport — the accent carries the play circle, as on the phone, and
+            // the whole row is scaled up so it fills its band: skips at 64dp,
+            // play at 88dp with a 44dp glyph.
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CoverButton(Icons.Default.SkipPrevious, "Previous", 52.dp, 26.dp) {
+                CoverButton(Icons.Default.SkipPrevious, "Previous", 64.dp, 32.dp) {
                     scope.launch { model.previous() }
                 }
                 Box(
                     Modifier
-                        .padding(horizontal = 16.dp)
-                        .size(76.dp)
+                        .padding(horizontal = 10.dp)
+                        .size(88.dp)
                         .clip(CircleShape)
                         .background(accent)
                         .clickable { scope.launch { model.togglePause() } },
@@ -386,26 +405,19 @@ private fun NowPlayingCover(
                         if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                         if (playing) "Pause" else "Play",
                         tint = Ink,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(44.dp),
                     )
                 }
-                CoverButton(Icons.Default.SkipNext, "Next", 52.dp, 26.dp) {
+                CoverButton(Icons.Default.SkipNext, "Next", 64.dp, 32.dp) {
                     scope.launch { model.next() }
                 }
             }
-
-            // The live format readout — MPD is the decoder; show what it is decoding.
-            val out = state?.outputFormat
-            if (out != null && playing) {
-                Text(
-                    "MPD → ${state?.outputDeviceName ?: ""} · ${fmtRate(out.sampleRateHz)}/${out.bitDepth}",
-                    color = TextFaint,
-                    fontSize = 11.sp,
-                    fontFamily = AppFont,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            // The column's leftover height pools here, under the transport —
+            // invisible on the OLED black, and it keeps the packed upper stack
+            // from over-flowing the screen on a small cover band.
+            Spacer(Modifier.fillMaxWidth().weight(1f))
+            // (No footer readout: the quality badge above the title already says
+            // what MPD is decoding — a second line saying it again was noise.)
         }
     }
 }
