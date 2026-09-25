@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.engabd.sendpin.ui.theme.AccentChoice
@@ -26,7 +27,16 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "CAMusic for Linux",
-        state = rememberWindowState(width = 1280.dp, height = 800.dp),
+        // The panel runs a bare X server with no window manager, so the window
+        // must place itself: undecorated at (0,0), exactly the panel's size —
+        // the plan's "undecorated/fullscreen for the panel". No voids, no bar.
+        state = rememberWindowState(
+            width = 1280.dp,
+            height = 800.dp,
+            position = WindowPosition(0.dp, 0.dp),
+        ),
+        undecorated = true,
+        resizable = false,
     ) {
         SendspinTheme(
             theme = ThemeChoice.DARK,
