@@ -51,6 +51,8 @@ fun QualityPill(
     val accent = LocalAccent.current
     val shape = RoundedCornerShape(11.dp)
     val tint = if (lossless) accent else TextMuted
+    // Scaled up from the phone's pill for the panel: the badge is part of the
+    // cover's text stack here, sized to fill the space beside a 32sp title.
     Row(
         modifier
             .then(
@@ -60,13 +62,13 @@ fun QualityPill(
             .clip(shape)
             .background(if (lossless) tint.a(if (hiRes) 0.16f else 0.12f) else Glass)
             .border(1.dp, tint.a(if (hiRes) 0.55f else 0.35f), shape)
-            .padding(horizontal = 13.dp, vertical = 9.dp),
+            .padding(horizontal = 17.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
             Modifier
-                .size(6.dp)
+                .size(8.dp)
                 .then(
                     if (hiRes) Modifier.shadow(8.dp, CircleShape, ambientColor = tint, spotColor = tint)
                     else Modifier
@@ -77,7 +79,7 @@ fun QualityPill(
         Text(
             text,
             color = if (lossless) inkOn(0.92f) else TextMuted,
-            style = TextStyle(fontFamily = MonoFont, fontWeight = FontWeight.Bold, fontSize = 11.sp),
+            style = TextStyle(fontFamily = MonoFont, fontWeight = FontWeight.Bold, fontSize = 14.sp),
             maxLines = 1,
             // The label grew a live bitrate on the MPD path, where it moves from
             // second to second. Clipping the tail of a long one is the right
