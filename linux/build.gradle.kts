@@ -74,6 +74,14 @@ dependencies {
     // material3 is no longer pulled by the desktop meta-package: declared
     // directly. 1.12.0-alpha03 is the CMP 1.12.x pairing.
     implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
+    // The shared panes draw from the extended icon set (SkipNext, QueueMusic…),
+    // which ended at 1.7.x — pure ImageVectors, uncoupled from the ui version.
+    implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
+    // Artwork: Jellyfin serves covers over plain HTTP; Coil 3 is the KMP line
+    // (the repo's Coil 2.7.0 is Android-only). OkHttp engine reuses our client
+    // settings-free; the shared Http client is not needed for covers.
+    implementation("io.coil-kt.coil3:coil-compose:3.6.3")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
