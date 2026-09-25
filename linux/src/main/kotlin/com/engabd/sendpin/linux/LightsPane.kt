@@ -133,7 +133,7 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
         ModeRow(
             label = "Mode",
             current = status?.mode,
-            options = listOf("video", "music", "games", "scenes"),
+            options = listOf("video", "music", "games"),
         ) { m ->
             busy = true
             scope.launch {
@@ -156,24 +156,42 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
 
         HorizontalDivider(color = Ink2)
 
-        // Brightness — scrub locally, commit on release; the 2 s poll reconciles.
-        val bri = status?.brightness ?: 50
-        var briScrub by remember { mutableStateOf<Float?>(null) }
+        // Offset — HueGhost's music-sync timing trim, in seconds, committed on
+        // release. (`brightness` is not an official Hue Sync concept; the lights
+        // follow the room as the Sync Box drives them.)
+        val off = status?.offsetS ?: 0.0
+        var offScrub by remember { mutableStateOf<Double?>(null) }
         Column {
-            Text("Brightness", color = TextPrimary, fontFamily = AppFont, fontSize = 15.sp)
+            Text("Offset (s)", color = TextPrimary, fontFamily = AppFont, fontSize = 15.sp)
+            Text(
+                "Trim the sync timing — negative pulls the lights earlier.",
+                color = TextMuted,
+                fontFamily = AppFont,
+                fontSize = 11.sp,
+            )
             Slider(
-                value = briScrub ?: bri.toFloat(),
-                onValueChange = { briScrub = it },
+                value = (offScrub ?: off).toFloat(),
+                onValueChange = { offScrub = it.toDouble() },
                 onValueChangeFinished = {
-                    briScrub?.let { f ->
+                    offScrub?.let { v ->
                         scope.launch {
-                            runCatching { hg.set(brightness = f.toInt()) }
+                            runCatching { hg.set(offsetS = (v * 10).toInt() / 10.0) }
                             refresh()
                         }
                     }
-                    briScrub = null
+                    offScrub = null
                 },
-                valueRange = 0f..100f,
+                valueRange = -2f..2f,
+            )
+        }
+
+        // What the follow source is tracking, straight from the daemon.
+        status?.followItem?.let { item ->
+            Text(
+                "Following: $item",
+                color = TextMuted,
+                fontFamily = AppFont,
+                fontSize = 12.sp,
             )
         }
     }

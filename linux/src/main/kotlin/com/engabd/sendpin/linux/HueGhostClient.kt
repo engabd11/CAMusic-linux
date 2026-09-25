@@ -68,16 +68,15 @@ class HueGhostClient(
     }
 
     /**
-     * POST /api/set — any subset of mode / intensity / brightness / offset_delta /
-     * binding. [mode], [intensity] null = leave alone.
+     * POST /api/set — any subset of mode / intensity / offset_s / enabled
+     * (v2.8 keys; see [setBody]). Null leaves the setting alone.
      */
     suspend fun set(
         mode: String? = null,
         intensity: String? = null,
-        brightness: Int? = null,
-        offsetDelta: Double? = null,
-        bindingEnabled: Pair<String, Boolean>? = null,
-    ): Boolean = post(url("/set"), setBody(mode, intensity, brightness, offsetDelta, bindingEnabled))
+        offsetS: Double? = null,
+        enabled: Boolean? = null,
+    ): Boolean = post(url("/set"), setBody(mode, intensity, offsetS, enabled))
 
     private suspend fun postEmpty(path: String): Boolean = post(url(path), "{}")
 
@@ -91,23 +90,30 @@ class HueGhostClient(
         }.getOrDefault(false)
     }
 
-    /** What the Lights pane shows. `running` reads HueGhost's engine state. */
+    /** What the Lights pane shows — HueGhost v2.8's top-level status shape. */
     data class Status(
         val running: Boolean,
         val mode: String?,
         val intensity: String?,
-        val brightness: Int?,
+        /** The follow target's item, when a session is being tracked. */
+        val followItem: String?,
+        /** HueGhost's music-sync offset, in seconds. */
+        val offsetS: Double?,
         val version: String?,
     )
 
     companion object {
-        /** The exact /set body for a subset of fields — pure, so the wire shape is testable. */
+        /**
+         * The exact /set body for a subset of fields — pure, so the wire shape is
+         * testable. v2.8 keys: mode, intensity, offset_s. (`brightness` does not
+         * exist — official Hue Sync exposes none; `offset_delta` was v2.6's name,
+         * now `offset_s`.)
+         */
         internal fun setBody(
             mode: String? = null,
             intensity: String? = null,
-            brightness: Int? = null,
-            offsetDelta: Double? = null,
-            bindingEnabled: Pair<String, Boolean>? = null,
+            offsetS: Double? = null,
+            enabled: Boolean? = null,
         ): String = buildString {
             append("{")
             var first = true
@@ -118,33 +124,32 @@ class HueGhostClient(
             }
             mode?.let { field("\"mode\":\"$it\"") }
             intensity?.let { field("\"intensity\":\"$it\"") }
-            brightness?.let { field("\"brightness\":$it") }
-            offsetDelta?.let { field("\"offset_delta\":$it") }
-            bindingEnabled?.let { (key, enabled) ->
-                field("\"binding\":{\"key\":\"$key\",\"enabled\":$enabled}")
-            }
+            offsetS?.let { field("\"offset_s\":$it") }
+            enabled?.let { field("\"enabled\":$it") }
             append("}")
         }
 
         /**
-         * Parse /api/status. Pure so the Lights pane's read model is testable
-         * without a daemon. HueGhost's `engine.state().as_dict()` is nested under
-         * `engine`; missing keys fall back rather than throw.
+         * Parse /api/status — HueGhost v2.8's top-level shape: `state`, live
+         * `mode`/`intensity` (engine-reported, falling back to config defaults),
+         * `offset_s`, `follow.item`. Pure so the Lights pane's read model is
+         * testable without a daemon; unknown keys are ignored.
          */
         fun parseStatus(body: String): Status? {
             if (body.isBlank()) return null
             return runCatching {
                 val json = Json { ignoreUnknownKeys = true }
                 val root = json.parseToJsonElement(body).jsonObject
-                val engine = root["engine"]?.jsonObject ?: root
                 fun s(key: String): String? =
-                    engine[key]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    root[key]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 Status(
-                    running = engine["state"]?.jsonPrimitive?.contentOrNull == "syncing",
+                    running = s("state") == "syncing",
                     mode = s("mode"),
                     intensity = s("intensity"),
-                    brightness = engine["bri"]?.jsonPrimitive?.intOrNull,
-                    version = root["version"]?.jsonPrimitive?.contentOrNull,
+                    followItem = root["follow"]?.jsonObject?.get("item")
+                        ?.jsonPrimitive?.contentOrNull,
+                    offsetS = root["offset_s"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),
+                    version = s("version"),
                 )
             }.getOrNull()
         }
