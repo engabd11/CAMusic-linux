@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -66,8 +67,13 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
         // The album wash — recorded as the backdrop so the glass surfaces below
         // sample it; see the forked Backdrop.kt.
         MeltBackdrop(url = queue.getOrNull(index)?.artUrl)
+    // `modifier` carries the `weight()` PanelShell handed down — a RowScope/ColumnScope
+    // parent-data modifier that only means something on the direct child of that Row/
+    // Column, which is this outer Box. Applying it again here silently did nothing
+    // useful while doubling up `fillMaxHeight()`; the Column only needs to fill what
+    // the Box already claimed.
     Column(
-        modifier.padding(24.dp),
+        Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Cover — real glass now: sampled backdrop under the tint, hairline edge.
@@ -83,7 +89,12 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
                 coil3.compose.AsyncImage(
                     model = art,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxWidth(),
+                    // Without a ContentScale, a tall cover inside this weighted Box could
+                    // exceed its bounds and get clipped by the parent instead of scaled to
+                    // fit — square crop matches every other cover in the app (AlbumTile,
+                    // AlbumDetailView).
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
                 )
             } else {
                 Text(
