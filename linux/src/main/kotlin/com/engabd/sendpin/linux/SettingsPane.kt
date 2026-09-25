@@ -56,6 +56,8 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
     val layout by settings.layoutMode.collectAsState(initial = "landscape")
     val accent by settings.accentChoice.collectAsState(initial = "album")
     val report by settings.reportToJellyfin.collectAsState(initial = true)
+    val theme by settings.themeChoice.collectAsState(initial = "dark")
+    val glassBlur by settings.glassBlur.collectAsState(initial = true)
 
     // Local edit buffers, re-keyed on settings changes so Apply/external edits refresh.
     var mpdField by remember(mpdAddress) { mutableStateOf(mpdAddress) }
@@ -130,6 +132,29 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
             options = listOf("album", "fixed"),
         ) { choice ->
             scope.launch { settings.setAccentChoice(choice) }
+        }
+        ChipRow(
+            label = "Theme",
+            current = theme,
+            options = listOf("oled", "dark", "light", "system"),
+        ) { t ->
+            scope.launch { settings.setThemeChoice(t) }
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Blur behind glass surfaces",
+                color = TextPrimary,
+                fontFamily = AppFont,
+                fontSize = 15.sp,
+            )
+            Switch(
+                checked = glassBlur,
+                onCheckedChange = { v -> scope.launch { settings.setGlassBlur(v) } },
+            )
         }
 
         HorizontalDivider(color = Ink2)

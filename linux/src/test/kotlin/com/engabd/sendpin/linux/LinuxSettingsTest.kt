@@ -31,6 +31,8 @@ class LinuxSettingsTest {
         assertEquals("", settings.jfUrl.first())
         assertEquals("landscape", settings.layoutMode.first())
         assertEquals("camusic-linux", settings.deviceId.first())
+        assertEquals("dark", settings.themeChoice.first())
+        assertTrue(settings.glassBlur.first(), "glass blur defaults on for the desktop panel")
     }
 
     @Test
@@ -45,6 +47,8 @@ class LinuxSettingsTest {
         assertEquals("192.168.0.202:6600", reloaded.mpdAddress.first())
         assertEquals("http://192.168.0.138:8096", reloaded.jfUrl.first())
         assertEquals("portrait", reloaded.layoutMode.first())
+        reloaded.setThemeChoice("oled")
+        assertEquals("oled", LinuxSettings(path).themeChoice.first())
     }
 
     @Test

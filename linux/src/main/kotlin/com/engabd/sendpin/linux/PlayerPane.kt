@@ -35,8 +35,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import com.engabd.sendpin.ui.design.MeltBackdrop
+import com.engabd.sendpin.ui.design.glassSurface
 import com.engabd.sendpin.ui.theme.AppFont
 import com.engabd.sendpin.ui.theme.Glass
+import com.engabd.sendpin.ui.theme.Hairline
 import com.engabd.sendpin.ui.theme.TextMuted
 import com.engabd.sendpin.ui.theme.TextPrimary
 import com.engabd.sendpin.ui.theme.TextSecondary
@@ -59,17 +62,20 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
     val playing = state?.playing ?: false
     var scrub by remember { mutableStateOf<Float?>(null) }
 
+    Box(modifier) {
+        // The album wash — recorded as the backdrop so the glass surfaces below
+        // sample it; see the forked Backdrop.kt.
+        MeltBackdrop(url = queue.getOrNull(index)?.artUrl)
     Column(
         modifier.padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Cover — the art URL rides on the queue entry (Jellyfin's image URL).
+        // Cover — real glass now: sampled backdrop under the tint, hairline edge.
         Box(
             Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(RoundedCornerShape(28.dp))
-                .background(Glass),
+                .glassSurface(RoundedCornerShape(28.dp), Glass, border = Hairline),
             contentAlignment = androidx.compose.ui.Alignment.Center,
         ) {
             val art = queue.getOrNull(index)?.artUrl
@@ -152,6 +158,7 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             )
         }
     }
+    }
 }
 
 /** A transport target at least 48dp — a panel is touched, not clicked. */
@@ -166,8 +173,7 @@ private fun TransportButton(
         Modifier
             .padding(horizontal = 12.dp)
             .size(if (big) 64.dp else 48.dp)
-            .clip(RoundedCornerShape(100.dp))
-            .background(Glass)
+            .glassSurface(RoundedCornerShape(100.dp), Glass, border = Hairline)
             .clickable { onClick() },
         contentAlignment = androidx.compose.ui.Alignment.Center,
     ) {

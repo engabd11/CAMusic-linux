@@ -16,7 +16,6 @@ plugins {
 // the whole sharing contract.
 val sharedFiles = listOf(
         "ui/theme/Color.kt",
-        "ui/theme/Type.kt",
         "ui/theme/AccentTextFieldColors.kt",
         "mpd/MpdClient.kt",
         "mpd/MpdRemote.kt",
@@ -30,6 +29,7 @@ val sharedFiles = listOf(
         "audio/LocalTrack.kt",
         "audio/StreamQuality.kt",
         "data/LanOnlyCleartext.kt",
+        // ui/theme/Type.kt is forked whole into linux/src (bundled Roboto/JBM), not shared.
     )
 
 val sharedSrc = layout.buildDirectory.dir("sharedSrc")

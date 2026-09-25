@@ -13,6 +13,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import com.engabd.sendpin.ui.design.ProvideBackdrop
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
@@ -182,6 +183,8 @@ fun SendspinTheme(
     accentChoice: AccentChoice = AccentChoice.ALBUM,
     /** The accent for [AccentChoice.FIXED], and the seed when nothing is playing. */
     seedAccent: Color = DefaultAccent,
+    /** The user's glass-blur call, handed to [ProvideBackdrop]. */
+    glassBlur: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -210,11 +213,9 @@ fun SendspinTheme(
             shapes = AppShapes,
             motionScheme = MotionScheme.expressive(),
         ) {
-            // ProvideBackdrop is not on the desktop: Backdrop.kt reads
-            // AppSettings.glassBlur, which is Android-deep (DataStore + Context).
-            // Its own doc covers the absence — a screen with no wash recorded
-            // simply falls back to the flat fill.
-            content()
+            // The desktop ProvideBackdrop takes the blur flag directly — the
+            // fork's Backdrop.kt documents why AppSettings is not reachable here.
+            ProvideBackdrop(blur = glassBlur, content = content)
         }
     }
 }

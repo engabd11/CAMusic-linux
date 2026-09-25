@@ -139,6 +139,14 @@ class LinuxSettings(private val path: Path) {
     val accentChoice: Flow<String> = str("accent_choice", "album")
     /** The fixed accent, as ARGB int, when accentChoice is `fixed`. */
     val accentFixed: Flow<Int> = int("accent_fixed", 0xFF8AB4F8.toInt())
+    /** `oled` | `dark` | `light` | `system` — the forked ThemeChoice key. */
+    val themeChoice: Flow<String> = str("theme_choice", "dark")
+    /** Whether glass surfaces blur the backdrop (Backdrop.kt's blur flag). */
+    val glassBlur: Flow<Boolean> = bool("glass_blur", true)
+
+    suspend fun setThemeChoice(value: String) = set("theme_choice", JsonPrimitive(value))
+    suspend fun setGlassBlur(value: Boolean) = set("glass_blur", JsonPrimitive(value))
+
     /** Whether the quality badge shows on the player pane. */
     val showQualityBadge: Flow<Boolean> = bool("show_quality_badge", true)
 

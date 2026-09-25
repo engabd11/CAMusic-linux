@@ -23,6 +23,8 @@ fun main() = application {
     val layout by settings.layoutMode.collectAsState(initial = "landscape")
     val accent by settings.accentChoice.collectAsState(initial = "album")
     val fixed by settings.accentFixed.collectAsState(initial = 0xFF8AB4F8.toInt())
+    val theme by settings.themeChoice.collectAsState(initial = "dark")
+    val glassBlur by settings.glassBlur.collectAsState(initial = true)
 
     Window(
         onCloseRequest = ::exitApplication,
@@ -39,9 +41,10 @@ fun main() = application {
         resizable = false,
     ) {
         SendspinTheme(
-            theme = ThemeChoice.DARK,
+            theme = ThemeChoice.from(theme),
             accentChoice = AccentChoice.from(accent),
             seedAccent = Color(fixed),
+            glassBlur = glassBlur,
         ) {
             PanelShell(model = model, layoutMode = LayoutMode.from(layout))
         }

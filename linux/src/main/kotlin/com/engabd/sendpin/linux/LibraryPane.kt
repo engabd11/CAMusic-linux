@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -50,10 +51,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.engabd.sendpin.ui.design.glassSurface
 import com.engabd.sendpin.ma.MaItem
 import com.engabd.sendpin.ma.MaSearchResults
 import com.engabd.sendpin.ui.theme.AppFont
 import com.engabd.sendpin.ui.theme.Glass
+import com.engabd.sendpin.ui.theme.Hairline
 import com.engabd.sendpin.ui.theme.Ink2
 import com.engabd.sendpin.ui.theme.TextMuted
 import com.engabd.sendpin.ui.theme.TextPrimary
@@ -159,7 +162,7 @@ private fun AlbumsGrid(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Albums",
+                "Recently added",
                 color = TextPrimary,
                 fontFamily = AppFont,
                 fontWeight = FontWeight.Bold,
@@ -184,7 +187,7 @@ private fun AlbumsGrid(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(albums, key = { it.itemId }) { album ->
+            items(albums, span = { GridItemSpan(2) }, key = { it.itemId }) { album ->
                 AlbumTile(album, onAlbum)
             }
         }
@@ -205,8 +208,7 @@ private fun AlbumTile(album: MaItem, onClick: (MaItem) -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Glass),
+                .glassSurface(RoundedCornerShape(12.dp), Glass, border = Hairline),
         )
         Text(
             album.name,
@@ -322,7 +324,7 @@ private fun ArtistDetailView(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(albums, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
+            items(albums, span = { GridItemSpan(2) }, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
         }
     }
 }
@@ -360,7 +362,7 @@ private fun SearchView(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(found, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
+                items(found, span = { GridItemSpan(2) }, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
             }
         }
     }
