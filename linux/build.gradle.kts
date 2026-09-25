@@ -25,10 +25,11 @@ val sharedFiles = listOf(
         "library/MusicSource.kt",
         "library/JellyfinSource.kt",
         "library/ServerConfig.kt",
-        "library/LocalFavourites.kt",
         "ma/MaModels.kt",
         "audio/RemotePlayback.kt",
         "audio/LocalTrack.kt",
+        "audio/StreamQuality.kt",
+        "data/LanOnlyCleartext.kt",
     )
 
 val sharedSrc = layout.buildDirectory.dir("sharedSrc")
@@ -58,6 +59,12 @@ sourceSets {
         }
     }
 }
+
+// The Sync never runs by itself: every Kotlin compile depends on it so a shared
+// file edited in :app is re-copied before :linux compiles, and a stale build dir
+// can never outlive the edit that should have changed it.
+tasks.named("compileKotlin") { dependsOn("syncSharedSources") }
+tasks.named("compileTestKotlin") { dependsOn("syncSharedSources") }
 
 // The shared files compile against the same versions :app pins, so the desktop
 // module reads identical APIs — including the material3 Expressive surface.
