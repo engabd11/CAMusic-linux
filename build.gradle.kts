@@ -9,4 +9,8 @@ plugins {
     id("androidx.baselineprofile") version "1.5.0-rc02" apply false
     id("com.google.devtools.ksp") version "2.3.6" apply false
     id("androidx.room") version "2.8.4" apply false
+    // CAMusic for Linux (:linux) — Kotlin JVM + Compose Desktop. Versions match
+    // :app's pins so the shared files compile against identical APIs.
+    id("org.jetbrains.kotlin.jvm") version "2.4.10" apply false
+    id("org.jetbrains.compose") version "1.12.1" apply false
 }

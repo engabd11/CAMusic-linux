@@ -20,3 +20,6 @@ include(":app")
 // Generates the startup/scroll baseline profile. Never built by a normal assemble —
 // see baselineprofile/build.gradle.kts for how to run it.
 include(":baselineprofile")
+// CAMusic for Linux — Compose Desktop panel for the NUC touchscreen. Local
+// testing only; shares source with :app (see linux/build.gradle.kts).
+include(":linux")
