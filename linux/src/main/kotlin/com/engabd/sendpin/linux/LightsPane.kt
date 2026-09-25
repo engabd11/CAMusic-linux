@@ -1,18 +1,23 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.engabd.sendpin.linux.ui.touchDragScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -85,8 +90,12 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
         busy = false
     }
 
+    val scrollState = rememberScrollState()
+    Box(modifier) {
     Column(
-        modifier.padding(24.dp).verticalScroll(rememberScrollState()),
+        Modifier.fillMaxSize().padding(24.dp)
+            .verticalScroll(scrollState)
+            .touchDragScroll(scrollState, Orientation.Vertical),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
@@ -194,6 +203,11 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
                 fontSize = 12.sp,
             )
         }
+    }
+        VerticalScrollbar(
+            rememberScrollbarAdapter(scrollState),
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+        )
     }
 }
 

@@ -1,7 +1,9 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +13,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,7 +26,11 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.engabd.sendpin.linux.ui.touchDragScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -44,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -122,13 +131,31 @@ fun LibraryPane(modifier: Modifier, model: PanelModel) {
                 artist = artistDetail!!.first,
                 albums = artistDetail!!.second,
                 onBack = { artistDetail = null },
-                onAlbum = { a -> scope.launch { albumDetail = source.albumDetail(a.itemId).let { p -> p.first!! to p.second } } },
+                onAlbum = { a ->
+                    scope.launch {
+                        try {
+                            val (album, tracks) = source.albumDetail(a.itemId)
+                            if (album != null) albumDetail = album to tracks else loadError = "Album not found"
+                        } catch (e: Exception) {
+                            loadError = e.message
+                        }
+                    }
+                },
             )
             searching -> SearchView(
                 query = query,
                 onQuery = { query = it },
                 results = results,
-                onAlbum = { a -> scope.launch { albumDetail = source.albumDetail(a.itemId).let { p -> p.first!! to p.second } } },
+                onAlbum = { a ->
+                    scope.launch {
+                        try {
+                            val (album, tracks) = source.albumDetail(a.itemId)
+                            if (album != null) albumDetail = album to tracks else loadError = "Album not found"
+                        } catch (e: Exception) {
+                            loadError = e.message
+                        }
+                    }
+                },
                 onBack = { searching = false; query = ""; results = null },
             )
             else -> AlbumsGrid(
@@ -137,7 +164,12 @@ fun LibraryPane(modifier: Modifier, model: PanelModel) {
                 onAlbum = { a ->
                     scope.launch {
                         try {
-                            albumDetail = source.albumDetail(a.itemId).let { p -> p.first!! to p.second }
+                            val (album, tracks) = source.albumDetail(a.itemId)
+                            // Jellyfin returning no album (e.g. it was deleted after the grid
+                            // loaded) used to hit a `!!` here — on this undecorated, WM-less
+                            // panel that throw took the whole screen to black with no crash
+                            // dialog and no way back. Route it to the error text instead.
+                            if (album != null) albumDetail = album to tracks else loadError = "Album not found"
                         } catch (e: Exception) {
                             loadError = e.message
                         }
@@ -182,15 +214,26 @@ private fun AlbumsGrid(
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
         }
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(6),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(albums, span = { GridItemSpan(2) }, key = { it.itemId }) { album ->
-                AlbumTile(album, onAlbum)
+        val gridState = rememberLazyGridState()
+        Box(Modifier.fillMaxSize()) {
+            LazyVerticalGrid(
+                state = gridState,
+                columns = GridCells.Fixed(6),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
+            ) {
+                items(albums, span = { GridItemSpan(2) }, key = { it.itemId }) { album ->
+                    AlbumTile(album, onAlbum)
+                }
             }
+            // The only sign a touch panel gets that a grid continues below the fold —
+            // there is no wheel and no cursor to hint at it otherwise.
+            VerticalScrollbar(
+                rememberScrollbarAdapter(gridState),
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            )
         }
     }
 }
@@ -282,16 +325,27 @@ private fun AlbumDetailView(
                 Text("Play album", fontFamily = AppFont)
             }
         }
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-            itemsIndexed(tracks) { i, t ->
-                TrackRow(
-                    n = i + 1,
-                    title = t.name,
-                    artist = t.subtitle,
-                    duration = t.duration,
-                    onClick = { onPlay(i) },
-                )
+        val trackState = rememberLazyListState()
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = trackState,
+                contentPadding = PaddingValues(bottom = 24.dp),
+                modifier = Modifier.fillMaxSize().touchDragScroll(trackState),
+            ) {
+                itemsIndexed(tracks) { i, t ->
+                    TrackRow(
+                        n = i + 1,
+                        title = t.name,
+                        artist = t.subtitle,
+                        duration = t.duration,
+                        onClick = { onPlay(i) },
+                    )
+                }
             }
+            VerticalScrollbar(
+                rememberScrollbarAdapter(trackState),
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            )
         }
     }
 }
@@ -319,13 +373,22 @@ private fun ArtistDetailView(
                 fontSize = 22.sp,
             )
         }
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(6),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(albums, span = { GridItemSpan(2) }, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
+        val gridState = rememberLazyGridState()
+        Box(Modifier.fillMaxSize()) {
+            LazyVerticalGrid(
+                state = gridState,
+                columns = GridCells.Fixed(6),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
+            ) {
+                items(albums, span = { GridItemSpan(2) }, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
+            }
+            VerticalScrollbar(
+                rememberScrollbarAdapter(gridState),
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            )
         }
     }
 }
@@ -352,18 +415,30 @@ private fun SearchView(
                 placeholder = { Text("Search the library", fontFamily = AppFont) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(),
-                modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(end = 16.dp)
+                    .onFocusEvent { e -> if (e.isFocused) launchOnScreenKeyboard() },
             )
         }
         val found = results?.albums ?: emptyList()
         if (results != null) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(6),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(found, span = { GridItemSpan(2) }, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
+            val gridState = rememberLazyGridState()
+            Box(Modifier.fillMaxSize()) {
+                LazyVerticalGrid(
+                    state = gridState,
+                    columns = GridCells.Fixed(6),
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
+                ) {
+                    items(found, span = { GridItemSpan(2) }, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
+                }
+                VerticalScrollbar(
+                    rememberScrollbarAdapter(gridState),
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                )
             }
         }
     }
@@ -380,6 +455,9 @@ private fun TrackRow(
     Row(
         Modifier
             .fillMaxWidth()
+            // 48dp minimum — "a panel is touched, not clicked" (PlayerPane's own words);
+            // the old 10dp padding only reached ~44dp with this type scale.
+            .heightIn(min = 48.dp)
             .clickable { onClick() }
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -436,4 +514,25 @@ private fun NotConnected(modifier: Modifier) {
 private fun formatMsLocal(ms: Long): String {
     val s = ms / 1000
     return "%d:%02d".format(s / 60, s % 60)
+}
+
+/**
+ * Simple version of item 2: this panel is touch-only, so a `TextField` gaining focus is
+ * useless without something drawing keys. Rather than build an in-app keypad, shell out to
+ * whichever on-screen keyboard the image ships — `squeekboard` (the GNOME/Phosh one, the
+ * more likely fit for a small touch panel) tried first, `onboard` (the older GTK one) as the
+ * fallback. Both toggle their own visibility on a second launch/DBus call in practice, but
+ * `ProcessBuilder.start()` here is fire-and-forget: if neither binary is on PATH this no-ops
+ * silently rather than crashing the panel, which matters more than surfacing the failure —
+ * there's no dialog to surface it to (see item 3, `undecorated` has no chrome at all).
+ */
+private fun launchOnScreenKeyboard() {
+    for (cmd in listOf("squeekboard", "onboard")) {
+        try {
+            ProcessBuilder(cmd).start()
+            return
+        } catch (_: Exception) {
+            // Not installed / not on PATH — try the next one.
+        }
+    }
 }

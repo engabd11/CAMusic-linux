@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -129,6 +130,9 @@ private fun TabStrip(
             val active = t == selected
             Row(
                 Modifier
+                    // 48dp minimum — the old 9dp padding only reached ~36dp against the
+                    // 18dp icon; PlayerPane's transport row already gets this right.
+                    .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(100.dp))
                     .background(if (active) Glass else Color.Transparent)
                     .clickable { on(t) }
