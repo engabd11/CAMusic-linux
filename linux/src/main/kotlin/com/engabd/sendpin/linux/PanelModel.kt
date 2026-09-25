@@ -57,8 +57,20 @@ class PanelModel(val settings: LinuxSettings) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pollJob: kotlinx.coroutines.Job? = null
 
-    /** The Jellyfin id for an MPD queue index — [SessionReporter]'s lookup. */
-    private fun trackIdAt(index: Int): String? = queue.value.getOrNull(index)?.id
+    /**
+     * The Jellyfin id for an MPD queue index, or null when that entry has none —
+     * [SessionReporter]'s lookup, and the reason it skips reporting rather than reports a
+     * garbage id.
+     *
+     * `LocalTrack.id` can't just be read directly: since [reorderQueue] synthesises an
+     * entry (id = the MPD path, same as [LocalTrack.scrobbleId]) for anything in MPD's
+     * queue this panel didn't queue itself — `mpc add`, another client, a queue MPD already
+     * had running before this panel connected — comparing `id` against `scrobbleId` is what
+     * tells a real Jellyfin id (always a different string, a guid vs a file path) from a
+     * synthesised one (deliberately set equal to `scrobbleId` as that marker).
+     */
+    private fun trackIdAt(index: Int): String? =
+        queue.value.getOrNull(index)?.let { t -> t.id.takeIf { it != t.scrobbleId } }
 
     private val reporter = SessionReporter(
         jellyfin = object : SessionReporter.Reporter {
@@ -75,7 +87,7 @@ class PanelModel(val settings: LinuxSettings) {
                 jf?.reportPlayback(id, completed = true, positionMs = positionMs)
             }
         },
-        trackIdAt = { index -> queue.value.getOrNull(index)?.id },
+        trackIdAt = ::trackIdAt,
     )
 
     val reportingToJellyfin: Boolean get() = reporter.reporting
@@ -143,27 +155,26 @@ class PanelModel(val settings: LinuxSettings) {
     private fun hgUrlOr(v: String) = v
 
     /**
-     * Re-sync `queue` to MPD's own queue order/membership every poll tick — this is what
-     * lets QueuePane fire a remove/move/shuffle/clear and never touch `queue.value`
-     * itself, per the app's established convention of correcting the UI from the source
-     * of truth rather than maintaining a second copy of it.
+     * Re-sync `queue` to MPD's own queue, index-for-index, every poll tick — this is what
+     * lets QueuePane fire a remove/move/shuffle/clear and never touch `queue.value` itself,
+     * per the app's established convention of correcting the UI from the source of truth
+     * rather than maintaining a second copy of it.
      *
-     * [MpdClient.queueTracks] rebuilds each entry from MPD's own metadata, whose `itemId`
-     * is the MPD file path, not the Jellyfin id [LocalTrack.id] needs to be for session
-     * reporting ([trackIdAt]/[SessionReporter]) to keep naming the right item. So this
-     * does not rebuild [LocalTrack]s from MPD's answer — it re-orders and filters the
-     * panel's *existing* list (built with the real Jellyfin identity by [playAlbum]) to
-     * match what MPD reports, keyed on [LocalTrack.scrobbleId] (the MPD path both sides
-     * agree on). A track MPD no longer has is dropped; nothing is guessed back in.
+     * Must never drop an MPD entry: `QueuePane` row *i* calls `playAt(i)`/`removeFromQueue(i)`,
+     * and MPD addresses that same index into its *own* full queue (`docs/providers.md`:
+     * "every command addresses a track by index, so a queue edit is sent as the same edit on
+     * both sides"). A filtered/shorter list here would desync every index below the first
+     * gap and silently play or delete the wrong track — the bug this replaced. See
+     * [reorderQueue] for the fix (index-aligned, synthesising rather than dropping).
      */
     private suspend fun reconcileQueueFromMpd() {
         val client = mpd ?: return
-        val mpdOrder = try {
-            client.queueTracks().map { it.itemId }
+        val mpdTracks = try {
+            client.queueTracks()
         } catch (e: Exception) {
             return
         }
-        queue.value = reorderQueue(queue.value, mpdOrder)
+        queue.value = reorderQueue(queue.value, mpdTracks)
     }
 
     /** Rebuild everything from the (just-saved) settings — Settings pane's Apply. */
@@ -223,12 +234,38 @@ class PanelModel(val settings: LinuxSettings) {
 }
 
 /**
- * The pure half of [PanelModel.reconcileQueueFromMpd]: given the panel's own queue (which
- * carries the real Jellyfin identity — see that function's doc comment for why this
- * re-orders rather than rebuilds) and the file-path order MPD reports, re-order and filter
- * to match. `internal` so `kotlin.test` can cover it without a running MPD.
+ * The pure half of [PanelModel.reconcileQueueFromMpd]: given the panel's own queue and
+ * MPD's own queue (as [MaItem]s — [MpdClient.queueTracks]'s `itemId` is the MPD file path,
+ * built fresh from MPD's own metadata every call), produce a list that is always exactly
+ * `mpdTracks.size` long and index-aligned with it. `internal` so `kotlin.test` can cover it
+ * without a running MPD.
+ *
+ * Index alignment is non-negotiable (see [PanelModel.reconcileQueueFromMpd]'s doc comment),
+ * so an MPD entry with no match in `current` is never dropped — a track MPD is playing that
+ * this panel didn't queue itself (another client's `mpc add`, ncmpcpp, moOde's web UI, or a
+ * queue MPD already had running before this panel connected — `docs/providers.md`: "MPD
+ * does not stop because a phone was closed") gets a [LocalTrack] synthesised from MPD's own
+ * metadata instead. A synthesised entry's `id` is deliberately set equal to its
+ * `scrobbleId` (the MPD path) rather than left as a separate identity — that equality is
+ * the exact thing [PanelModel.trackIdAt] checks to know the entry has no real Jellyfin id
+ * and must not be reported.
  */
-internal fun reorderQueue(current: List<LocalTrack>, mpdOrder: List<String>): List<LocalTrack> {
+internal fun reorderQueue(current: List<LocalTrack>, mpdTracks: List<MaItem>): List<LocalTrack> {
     val byMpdPath = current.associateBy { it.scrobbleId }
-    return mpdOrder.mapNotNull { byMpdPath[it] }
+    return mpdTracks.map { m -> byMpdPath[m.itemId] ?: synthesizeQueueTrack(m) }
 }
+
+/**
+ * A [LocalTrack] for an MPD queue entry this panel never queued, so has no Jellyfin
+ * identity for — see [reorderQueue]'s doc comment for why `id == scrobbleId` here is
+ * deliberate, not an oversight.
+ */
+internal fun synthesizeQueueTrack(m: MaItem): LocalTrack = LocalTrack(
+    id = m.itemId,
+    title = m.name,
+    artist = m.subtitle,
+    durationMs = (m.duration ?: 0) * 1000L,
+    artUrl = m.image,
+    scrobbleId = m.itemId,
+    scrobbleProvider = "mpd",
+)
