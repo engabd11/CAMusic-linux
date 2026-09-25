@@ -18,6 +18,7 @@ import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.splineBasedDecay
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
@@ -77,8 +78,17 @@ fun Modifier.touchDragScroll(
         // shadowed by the restricted receiver below since `AwaitPointerEventScope` doesn't
         // declare one, so it resolves to this outer scope.
         coroutineScope {
+            // Tracks the in-flight fling across gestures, not just within one — without
+            // this, "touch to stop a coasting list" (the most reflexive touch gesture
+            // there is) did the opposite: the previous fling's animateDecay kept dispatching
+            // deltas straight through dispatchRawDelta (which bypasses the scroll mutex)
+            // right alongside the new drag's own deltas, and the two fought each other.
+            var flingJob: Job? = null
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
+                // Cancel before the slop check, not after — a tap with no drag at all must
+                // still stop a coasting list.
+                flingJob?.cancel()
                 val velocityTracker = VelocityTracker()
                 velocityTracker.addPosition(down.uptimeMillis, down.position)
 
@@ -112,7 +122,7 @@ fun Modifier.touchDragScroll(
                     // synchronous way as the drag itself.
                     val velocity = velocityTracker.calculateVelocity()
                     val axisVelocity = if (orientation == Orientation.Vertical) velocity.y else velocity.x
-                    launch { runFling(state, -axisVelocity, density) }
+                    flingJob = launch { runFling(state, -axisVelocity, density) }
                 }
             }
         }

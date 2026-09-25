@@ -3,9 +3,14 @@ package com.engabd.sendpin.linux.ui
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.ui.unit.Density
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -21,6 +26,20 @@ private class FakeFrameClock : MonotonicFrameClock {
         timeNanos += 16_000_000L
         return onFrame(timeNanos)
     }
+}
+
+/**
+ * Like [FakeFrameClock], but each `withFrameNanos` call suspends until the test explicitly
+ * feeds it a frame via [advanceFrame] — needed for the cancellation test below, which has to
+ * stop the decay loop *mid-flight*: a clock that resolves every frame instantly (as
+ * [FakeFrameClock] does, deliberately, so the other tests run at test speed) would let
+ * `animateDecay` run to completion inside a single dispatcher turn, leaving nothing to
+ * cancel before it finishes on its own.
+ */
+private class SteppableFrameClock : MonotonicFrameClock {
+    private val frames = Channel<Long>(Channel.UNLIMITED)
+    suspend fun advanceFrame(timeNanos: Long) = frames.send(timeNanos)
+    override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R = onFrame(frames.receive())
 }
 
 /**
@@ -77,6 +96,44 @@ class TouchScrollFlingTest {
         assertTrue(
             state.dispatched.sum() == 0f,
             "a tap-then-release with no measurable velocity shouldn't produce a phantom scroll",
+        )
+    }
+
+    /**
+     * Regression test for the bug the coordinator caught: a new touch used to leave the
+     * previous fling's coroutine running, so its deltas kept landing on
+     * `dispatchRawDelta` alongside the new drag's own — "touch to stop a coasting list"
+     * did the opposite. `touchDragScroll` itself now cancels the held `Job` on the next
+     * `awaitFirstDown`; this test covers the half of that fix that doesn't need a real
+     * pointer stream — that cancelling the fling's `Job` actually stops `runFling` from
+     * dispatching any further deltas, which is what `flingJob?.cancel()` relies on.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `cancelling the fling job stops further dispatch`() = runTest {
+        val state = RecordingScrollableState()
+        val clock = SteppableFrameClock()
+        val job = launch(clock) { runFling(state, startVelocity = 3000f, density = Density(1f)) }
+
+        // Let the decay run for a couple of frames — same "put a finger down mid-flick"
+        // moment the bug happened at.
+        clock.advanceFrame(16_000_000L)
+        clock.advanceFrame(32_000_000L)
+        runCurrent()
+        val dispatchedBeforeCancel = state.dispatched.size
+        assertTrue(dispatchedBeforeCancel > 0, "expected the fling to have dispatched something before cancelling")
+
+        // The new touch: cancel, then feed more frames the way a still-subscribed
+        // FakeFrameClock would have kept doing.
+        job.cancel()
+        clock.advanceFrame(48_000_000L)
+        clock.advanceFrame(64_000_000L)
+        runCurrent()
+
+        assertEquals(
+            dispatchedBeforeCancel,
+            state.dispatched.size,
+            "a cancelled fling must not dispatch any more deltas, or it fights the next drag",
         )
     }
 }
