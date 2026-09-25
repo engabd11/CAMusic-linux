@@ -100,12 +100,20 @@ compose.desktop {
     }
 }
 
-// SOFTWARE renderer: Skiko cannot create a GL context on this headless NUC's X
-// server (no GPU pipeline for it). jvmArgs on compose.desktop.application is a
-// val in CMP 1.12, so the property goes on the run task instead. Revisit OPENGL
-// when the real touchscreen is driving this.
+// Revisiting OPENGL now that the real touchscreen is driving this, per the plan this
+// comment used to promise: SOFTWARE was rasterising the whole 1280x800 panel on the CPU,
+// which was tolerable for a static UI but will make the new touch-drag fling (see
+// TouchScroll.kt) visibly janky -- a flick needs a frame every ~16ms to read as smooth, and
+// software rasterising a full-panel redraw at that rate is exactly the kind of load a GPU
+// path exists for. jvmArgs on compose.desktop.application is a val in CMP 1.12, so the
+// property still goes on the run task rather than the application block.
+//
+// This is its own commit, last, specifically so it can be reverted alone if OPENGL turns
+// out not to be available on the NUC's X server after all -- unlike the gesture fix above,
+// this one could not be verified on this Windows machine at all (Skiko's GL context needs
+// the real GPU pipeline this comment used to say the NUC didn't have).
 tasks.withType<JavaExec>().configureEach {
-    jvmArgs("-Dskiko.renderApi=SOFTWARE")
+    jvmArgs("-Dskiko.renderApi=OPENGL")
 }
 
 // Step-4 smoke: MPD transport end to end without the UI.
