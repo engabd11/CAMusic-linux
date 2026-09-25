@@ -99,3 +99,13 @@ compose.desktop {
 tasks.withType<JavaExec>().configureEach {
     jvmArgs("-Dskiko.renderApi=SOFTWARE")
 }
+
+// Step-4 smoke: MPD transport end to end without the UI.
+//   MPD_ADDRESS=... MPD_TEST_PATH=... ./gradlew :linux:runSmoke
+tasks.register<JavaExec>("runSmoke") {
+    group = "verification"
+    description = "Play one hardcoded MPD path through the shared MpdRemote transport."
+    mainClass.set("com.engabd.sendpin.linux.tools.MpdSmokeKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    environment(System.getenv())
+}
