@@ -4,6 +4,8 @@
 // theme, the MPD client and the Jellyfin client are shared as source, not
 // hand-matched. No audio is decoded here — MPD owns the sound (RemotePlayback
 // shape), so this module needs media3 for nothing.
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
 plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -97,6 +99,21 @@ tasks.withType<Test> {
 compose.desktop {
     application {
         mainClass = "com.engabd.sendpin.linux.MainKt"
+        // Desktop install: ./gradlew :linux:packageDistributionForCurrentOS produces
+        // a self-contained app image under linux/build/compose/binaries/main/app/CAMusic/
+        // (bundled JRE, no system Java needed). Installed to /opt/camusic-linux with a
+        // desktop entry so it launches from the menu and the desktop like a real app.
+        nativeDistributions {
+            targetFormats(TargetFormat.AppImage)
+            packageName = "CAMusic"
+            packageVersion = "1.0.0"
+            description = "CAMusic control panel for the kitchen display"
+            vendor = "engabd11"
+            linux {
+                iconFile.set(project.file("src/main/resources/icon.png"))
+                menuGroup = "Audio"
+            }
+        }
     }
 }
 
