@@ -32,8 +32,14 @@ object JellyfinToMpd {
         val path = jfPath.trim()
         if (!path.startsWith(normalised)) return null
         val rest = path.removePrefix(normalised)
-        // A mapping must leave a non-empty, non-escaping, relative path.
-        if (rest.isEmpty() || rest.startsWith("/") || rest.contains("..")) return null
+        // A mapping must leave a non-empty, non-escaping, relative path. Escapes are
+        // judged per path segment — `foo/../../etc` must refuse, but a filename that
+        // merely CONTAINS dots must not: "04 - how long is... cold.flac" is a real
+        // track name (Orions Belte, Villa Amorini), and the old whole-string
+        // `contains("..")` check dropped it from every queue it appeared in. A
+        // dropped track shifts every index below it — tapping a row played the song
+        // after the one you touched, the app's own off-by-one bug report.
+        if (rest.isEmpty() || rest.startsWith("/") || rest.split('/').any { it == ".." }) return null
         return rest
     }
 

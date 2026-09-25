@@ -45,6 +45,32 @@ class JellyfinToMpdTest {
     }
 
     @Test
+    fun `a filename that contains dots is not a path escape`() {
+        // Regression: "04 - how long is... cold.flac" (Orions Belte, Villa Amorini)
+        // was refused by the old whole-string contains("..") check, silently dropping
+        // the track and shifting every queue index below it — tapping a row played
+        // the next song. The real-world report that found this bug.
+        val mapped = JellyfinToMpd.toMpdPath(
+            jfPath = "/mnt/media/Orions Belte/Villa Amorini (2021)/04 - how long is... cold.flac",
+            prefix = "/mnt/media/",
+        )
+        assertEquals(
+            "Orions Belte/Villa Amorini (2021)/04 - how long is... cold.flac",
+            mapped,
+            "an ellipsis in a filename is legal — only a .. segment escapes",
+        )
+    }
+
+    @Test
+    fun `a literal parent-directory segment still refuses`() {
+        assertEquals(null, JellyfinToMpd.toMpdPath("/mnt/music/../etc/passwd", prefix = "/mnt/music/"))
+        assertEquals(null, JellyfinToMpd.toMpdPath("/mnt/music/a/../../b.flac", prefix = "/mnt/music/"))
+        // "..flac" as a whole segment is a (weird) filename, not an escape — the
+        // segment check is equality, not containment.
+        assertEquals("..flac", JellyfinToMpd.toMpdPath("/mnt/music/..flac", prefix = "/mnt/music/"))
+    }
+
+    @Test
     fun `non-ascii paths survive intact`() {
         val mapped = JellyfinToMpd.toMpdPath(
             jfPath = "/mnt/music/Björk/Debut/01 human behaviour.flac",

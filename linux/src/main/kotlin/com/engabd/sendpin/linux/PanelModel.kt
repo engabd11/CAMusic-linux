@@ -228,8 +228,28 @@ class PanelModel(val settings: LinuxSettings) {
             statusLine.value = "No track mapped to MPD — check the path prefix in Settings"
             return
         }
+        // The tapped track's MPD position decides where playback starts, NOT the
+        // tapped row's index. A track that fails to map is dropped from the queue
+        // (mapNotNull above), and since MPD's queue then has no entry for it, every
+        // index below the drop would name a different song than the row it came from
+        // — the "tap a song, hear the next one" bug. Locating by identity keeps the
+        // row → song contract even when some other track in the album fails to map.
+        // The tapped track itself failing to map is a hard refusal: playing its
+        // neighbour would be exactly the bug again.
+        val tapped = tracks.getOrNull(startIndex)
+        val tappedPath = tapped?.let { paths[it.itemId] }
+            ?.let { JellyfinToMpd.toMpdPath(it, settings.jellyfinPathPrefix.first()) }
+        if (tapped == null || tappedPath == null) {
+            statusLine.value = "That track has no MPD-mappable path — check Settings"
+            return
+        }
+        val at = queueTracks.indexOfFirst { it.scrobbleId == tappedPath }
+        if (at < 0) {
+            statusLine.value = "That track will not queue — check Settings"
+            return
+        }
         queue.value = queueTracks
-        remote!!.setQueue(queueTracks, startIndex)
+        remote!!.setQueue(queueTracks, at)
     }
 }
 
