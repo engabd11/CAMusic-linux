@@ -14,103 +14,129 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.engabd.sendpin.audio.LocalTrack
+import com.engabd.sendpin.audio.RemoteState
+import com.engabd.sendpin.linux.ui.ArtImage
+import com.engabd.sendpin.linux.ui.EmptyState
+import com.engabd.sendpin.linux.ui.Eyebrow
+import com.engabd.sendpin.linux.ui.GlassCard
+import com.engabd.sendpin.linux.ui.PageGutter
+import com.engabd.sendpin.linux.ui.PageHeader
+import com.engabd.sendpin.linux.ui.PanelShapes
+import com.engabd.sendpin.linux.ui.PillButton
+import com.engabd.sendpin.linux.ui.PlayingBars
+import com.engabd.sendpin.linux.ui.SectionHeader
+import com.engabd.sendpin.linux.ui.formatTotal
 import com.engabd.sendpin.linux.ui.touchDragScroll
+import com.engabd.sendpin.ui.design.a
+import com.engabd.sendpin.ui.design.rememberAccent
 import com.engabd.sendpin.ui.theme.AppFont
-import com.engabd.sendpin.ui.theme.Glass
+import com.engabd.sendpin.ui.theme.MonoFont
 import com.engabd.sendpin.ui.theme.TextMuted
 import com.engabd.sendpin.ui.theme.TextPrimary
+import com.engabd.sendpin.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
 
 /**
- * The queue pane: what MPD is about to play, and the room to change it. Item 9 of the
- * plan's library-gap list, and the plan's own words for why it matters — "the biggest
- * functional gap for a screen you stand in front of".
+ * Time left in the queue from [index] on: the rest of the playing track plus every
+ * track after it. Pure so the header's total is testable.
+ */
+internal fun queueRemainingMs(queue: List<LocalTrack>, index: Int, positionMs: Long, durationMs: Long): Long {
+    if (queue.isEmpty()) return 0
+    val i = index.coerceIn(0, queue.lastIndex)
+    val current = (if (durationMs > 0) durationMs else queue[i].durationMs) - positionMs
+    return current.coerceAtLeast(0) + queue.drop(i + 1).sumOf { it.durationMs }
+}
+
+/**
+ * The queue pane: what MPD is about to play, and the room to change it. The playing
+ * track leads as a card in the album's colours; below it the whole queue, with what has
+ * already played dimmed rather than hidden — MPD's queue is index-addressed, so every
+ * row stays exactly where MPD has it.
  *
  * MPD's queue *is* the app's queue (`docs/providers.md`), and this pane touches it purely
  * through [PanelModel]'s queue-editing passthroughs — it never writes `model.queue` itself.
  * [PanelModel.reconcileQueueFromMpd] (run every poll tick) is what turns a fired command
- * into an updated list here; see that function's doc comment for why. A remove/shuffle
- * looks instant because the panel already polls at 1 Hz, not because this pane guessed the
- * new order.
+ * into an updated list here; see that function's doc comment for why.
  */
 @Composable
 fun QueuePane(modifier: Modifier, model: PanelModel) {
     val queue by model.queue.collectAsState()
     val state by model.state.collectAsState()
-    val nowPlayingIndex = state?.index?.takeIf { it >= 0 }
+    val nowIndex = state?.index?.takeIf { it >= 0 && it < queue.size }
     val scope = rememberCoroutineScope()
 
     Column(modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        val remaining = queueRemainingMs(queue, nowIndex ?: 0, state?.positionMs ?: 0, state?.durationMs ?: 0)
+        PageHeader(
+            title = "Queue",
+            subtitle = if (queue.isEmpty()) null else
+                "${queue.size} ${if (queue.size == 1) "song" else "songs"}  ·  ${formatTotal(remaining)} left",
         ) {
-            Text(
-                "Queue",
-                color = TextPrimary,
-                fontFamily = AppFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = PanelMetrics.PageTitle,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(onClick = { scope.launch { model.shuffleQueue() } }) {
-                    Icon(Icons.Default.Shuffle, "Shuffle queue", tint = TextPrimary)
-                }
-                IconButton(onClick = { scope.launch { model.clearQueue() } }) {
-                    Icon(Icons.Default.Clear, "Clear queue", tint = TextPrimary)
-                }
+            if (queue.isNotEmpty()) {
+                PillButton("Shuffle", icon = Icons.Default.Shuffle, filled = false, onClick = { scope.launch { model.shuffleQueue() } })
+                PillButton("Clear", icon = Icons.Default.DeleteSweep, filled = false, onClick = { scope.launch { model.clearQueue() } })
             }
         }
 
         if (queue.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "Nothing queued — play an album from the library.",
-                    color = TextMuted,
-                    fontFamily = AppFont,
-                    fontSize = PanelMetrics.Body,
+                EmptyState(
+                    Icons.AutoMirrored.Filled.QueueMusic,
+                    "Nothing queued",
+                    "Play an album from the library and it lines up here.",
                 )
             }
             return
         }
 
         val listState = rememberLazyListState()
+        // Open on the playing track, not the top of a long queue's history.
+        LaunchedEffect(Unit) { nowIndex?.let { if (it > 2) listState.scrollToItem(it + 1) } }
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
-                contentPadding = PaddingValues(bottom = 24.dp),
+                contentPadding = PaddingValues(bottom = 36.dp),
                 modifier = Modifier.fillMaxSize().touchDragScroll(listState),
             ) {
+                nowIndex?.let { i ->
+                    item(key = "now") { NowPlayingCard(queue[i], state) }
+                    item(key = "hdr") { SectionHeader("Up next", Modifier.padding(top = 12.dp)) }
+                }
                 itemsIndexed(queue, key = { i, t -> "$i:${t.scrobbleId ?: t.id}" }) { i, track ->
                     QueueRow(
                         track = track,
-                        nowPlaying = i == nowPlayingIndex,
+                        position = i + 1,
+                        nowPlaying = i == nowIndex,
+                        playing = state?.playing == true,
+                        played = nowIndex != null && i < nowIndex,
                         onPlay = { scope.launch { model.playAt(i) } },
                         onRemove = { scope.launch { model.removeFromQueue(i) } },
                     )
@@ -124,61 +150,98 @@ fun QueuePane(modifier: Modifier, model: PanelModel) {
     }
 }
 
+/** The playing track, large, with the accent glow under its cover. */
+@Composable
+private fun NowPlayingCard(track: LocalTrack, state: RemoteState?) {
+    val accent = rememberAccent()
+    GlassCard(Modifier.padding(horizontal = PageGutter)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            ArtImage(
+                track.artUrl, track.title,
+                Modifier.size(132.dp).shadow(22.dp, PanelShapes.Tile, ambientColor = accent, spotColor = accent),
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PlayingBars(accent, state?.playing == true, Modifier.size(18.dp))
+                    Eyebrow(if (state?.playing == true) "Now playing" else "Paused", accent)
+                }
+                Text(
+                    track.title, color = TextPrimary, fontFamily = AppFont, fontWeight = FontWeight.Bold,
+                    fontSize = 26.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                track.artist?.let {
+                    Text(it, color = TextSecondary, fontFamily = AppFont, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                track.album?.let {
+                    Text(it, color = TextMuted, fontFamily = AppFont, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun QueueRow(
     track: LocalTrack,
+    position: Int,
     nowPlaying: Boolean,
+    playing: Boolean,
+    played: Boolean,
     onPlay: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val accent = rememberAccent()
     Row(
         Modifier
             .fillMaxWidth()
-            // 64dp rows at the now-playing screen's scale — the panel is touched and
-            // read at arm's length, not a phone's 48dp/14sp (PanelMetrics).
-            .heightIn(min = PanelMetrics.RowMinHeight)
+            .padding(horizontal = 12.dp)
+            .heightIn(min = 76.dp)
+            .clip(PanelShapes.Thumb)
+            .background(if (nowPlaying) accent.a(0.14f) else Color.Transparent)
             .clickable(onClick = onPlay)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)
+            // Already played: still there (MPD's index is what every row addresses),
+            // but stepped back so the eye lands on what is coming.
+            .alpha(if (played) 0.45f else 1f),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // A small dot rather than reusing TrackRow's position number — this list can be
-        // reordered by MPD (shuffle) so a fixed "n" would look like a track number that
-        // isn't one.
-        Box(
-            Modifier
-                .size(10.dp)
-                .background(if (nowPlaying) TextPrimary else Glass, CircleShape),
+        Text(
+            "$position",
+            color = if (nowPlaying) accent else TextMuted,
+            fontFamily = MonoFont,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(end = 2.dp),
         )
-        Column(Modifier.weight(1f)) {
+        Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+            ArtImage(track.artUrl, track.title, Modifier.size(56.dp), shape = PanelShapes.Thumb)
+            if (nowPlaying) {
+                Box(Modifier.size(56.dp).clip(PanelShapes.Thumb).background(Color.Black.a(0.45f)))
+                PlayingBars(accent, playing)
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 track.title,
-                color = if (nowPlaying) TextPrimary else TextPrimary,
+                color = if (nowPlaying) accent else TextPrimary,
                 fontFamily = AppFont,
-                fontWeight = if (nowPlaying) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (nowPlaying) FontWeight.Bold else FontWeight.Medium,
                 fontSize = PanelMetrics.RowTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (track.artist != null) {
-                Text(
-                    track.artist,
-                    color = TextMuted,
-                    fontFamily = AppFont,
-                    fontSize = PanelMetrics.RowSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            val sub = listOfNotNull(track.artist, track.album).joinToString("  ·  ")
+            if (sub.isNotBlank()) {
+                Text(sub, color = TextMuted, fontFamily = AppFont, fontSize = PanelMetrics.RowSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        Text(
-            formatMs(track.durationMs),
-            color = TextMuted,
-            fontSize = PanelMetrics.Meta,
-            fontFamily = AppFont,
-            modifier = Modifier.width(44.dp),
-        )
-        IconButton(onClick = onRemove) {
+        if (track.durationMs > 0) {
+            Text(formatMs(track.durationMs), color = TextMuted, fontFamily = MonoFont, fontSize = 15.sp)
+        }
+        Box(
+            Modifier.size(56.dp).clip(CircleShape).clickable(onClick = onRemove),
+            contentAlignment = Alignment.Center,
+        ) {
             Icon(Icons.Default.Close, "Remove from queue", tint = TextMuted, modifier = Modifier.size(24.dp))
         }
     }

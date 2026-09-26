@@ -52,7 +52,7 @@ object JellyfinToMpd {
         id = item.itemId,
         title = item.name,
         artist = item.subtitle,
-        album = null,
+        album = item.album,
         durationMs = (item.duration ?: 0) * 1000L,
         artUrl = item.image,
         scrobbleId = mpdPath,

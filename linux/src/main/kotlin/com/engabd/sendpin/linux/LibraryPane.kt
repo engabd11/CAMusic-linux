@@ -11,53 +11,63 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollbarAdapter
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyRow
-import com.engabd.sendpin.linux.ui.OnScreenKeyboard
-import com.engabd.sendpin.linux.ui.OnScreenKeyboardKey
-import com.engabd.sendpin.linux.ui.applyKey
-import com.engabd.sendpin.linux.ui.touchDragScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
@@ -66,284 +76,592 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.engabd.sendpin.ui.design.glassSurface
+import com.engabd.sendpin.library.MusicSource
+import com.engabd.sendpin.linux.ui.ArtImage
+import com.engabd.sendpin.linux.ui.ArtTile
+import com.engabd.sendpin.linux.ui.CategoryCard
+import com.engabd.sendpin.linux.ui.CircleButton
+import com.engabd.sendpin.linux.ui.EmptyState
+import com.engabd.sendpin.linux.ui.Eyebrow
+import com.engabd.sendpin.linux.ui.OnScreenKeyboard
+import com.engabd.sendpin.linux.ui.OnScreenKeyboardKey
+import com.engabd.sendpin.linux.ui.PageGutter
+import com.engabd.sendpin.linux.ui.PageHeader
+import com.engabd.sendpin.linux.ui.PanelShapes
+import com.engabd.sendpin.linux.ui.PillButton
+import com.engabd.sendpin.linux.ui.SectionHeader
+import com.engabd.sendpin.linux.ui.Shelf
+import com.engabd.sendpin.linux.ui.ShelfSkeleton
+import com.engabd.sendpin.linux.ui.SkeletonBlock
+import com.engabd.sendpin.linux.ui.applyKey
+import com.engabd.sendpin.linux.ui.genreColors
+import com.engabd.sendpin.linux.ui.placeholderColors
+import com.engabd.sendpin.linux.ui.touchDragScroll
 import com.engabd.sendpin.ma.MaItem
 import com.engabd.sendpin.ma.MaSearchResults
+import com.engabd.sendpin.ui.design.a
+import com.engabd.sendpin.ui.design.glassSurface
+import com.engabd.sendpin.ui.design.rememberAccent
 import com.engabd.sendpin.ui.theme.AppFont
-import com.engabd.sendpin.ui.theme.Glass
 import com.engabd.sendpin.ui.theme.Hairline
-import com.engabd.sendpin.ui.theme.Ink2
+import com.engabd.sendpin.ui.theme.Ink
 import com.engabd.sendpin.ui.theme.TextMuted
 import com.engabd.sendpin.ui.theme.TextPrimary
 import com.engabd.sendpin.ui.theme.TextSecondary
+import com.engabd.sendpin.ui.theme.inkOn
+import java.time.LocalTime
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
- * The library pane's root category — the plan's items 7 ("Albums/Artists toggle") and 10
- * ("more browse roots") collapse into this one selector rather than being built twice: a
- * browse-root row already *is* the artists entry point, so a separate two-way toggle would
- * just be the same control built a second time and then deleted.
+ * A browse root — one of the Home page's category cards, each opening its own page.
+ * The old flat chip row (and its "Favourites is two shelves and then nothing" page)
+ * is gone: Home is the landing page now, and these are what it links into.
  */
 internal enum class LibraryCategory(val label: String) {
-    RECENT("Recently added"),
-    ALBUMS("All albums"),
+    ALBUMS("Albums"),
     ARTISTS("Artists"),
     PLAYLISTS("Playlists"),
     GENRES("Genres"),
     FAVORITES("Favourites"),
+    RECENT("Recently added"),
+    SONGS("Songs"),
 }
 
 /**
- * The library pane: Jellyfin browse — a category row over albums grid / all albums /
- * artists / playlists / genres / favourites, album detail with tracks, artist detail
- * (via [ArtistDetailView], previously written but never called from anywhere), and
- * search. Queueing hands tracks to MPD via [PanelModel.playAlbum] (Jellyfin file paths →
- * MPD relative paths).
- *
- * The grid is LibraryScreen's proportion system at desktop scale: 6-column base,
- * covers spanning 2, 12dp gaps, 20dp edges.
+ * Where the library is. A back stack of these replaces the old tangle of nullable
+ * `albumDetail`/`artistDetail`/`searching` flags, which could only ever go one level
+ * deep — an album opened from an artist's page used to lose the artist on Back.
+ */
+internal sealed interface LibraryRoute {
+    /** Identity for the saveable-state holder: scroll positions survive Back. */
+    val key: String
+
+    data object Home : LibraryRoute { override val key = "home" }
+    data object Search : LibraryRoute { override val key = "search" }
+    data class Browse(val category: LibraryCategory) : LibraryRoute {
+        override val key = "browse:${category.name}"
+    }
+    data class Album(val item: MaItem) : LibraryRoute { override val key = "album:${item.itemId}" }
+    data class Artist(val item: MaItem) : LibraryRoute { override val key = "artist:${item.itemId}" }
+    data class Playlist(val item: MaItem) : LibraryRoute { override val key = "playlist:${item.itemId}" }
+    data class Genre(val item: MaItem) : LibraryRoute { override val key = "genre:${item.itemId}" }
+}
+
+/** Push [route], unless it is already on top (a double tap must not stack two copies). */
+internal fun List<LibraryRoute>.pushed(route: LibraryRoute): List<LibraryRoute> =
+    if (lastOrNull() == route) this else this + route
+
+/** Pop one level; the root is never popped, so Back on Home is a no-op, not a blank pane. */
+internal fun List<LibraryRoute>.popped(): List<LibraryRoute> = if (size > 1) dropLast(1) else this
+
+/** Home's shelves, each loaded independently so one failing query costs one shelf. */
+internal data class HomeShelves(
+    val continueListening: List<MaItem> = emptyList(),
+    val recentlyPlayed: List<MaItem> = emptyList(),
+    val recentlyAdded: List<MaItem> = emptyList(),
+    val mostPlayed: List<MaItem> = emptyList(),
+    val favoriteAlbums: List<MaItem> = emptyList(),
+    val favoriteArtists: List<MaItem> = emptyList(),
+    val rediscover: List<MaItem> = emptyList(),
+) {
+    /** The hero card's album: the last one played, else the newest in the library. */
+    val featured: MaItem? get() = recentlyPlayed.firstOrNull() ?: recentlyAdded.firstOrNull()
+}
+
+/**
+ * The library's state, hoisted above the tab switch by the shell — so leaving for the
+ * Queue and coming back finds the same page, scrolled to the same place, without
+ * re-fetching every shelf. Rebound (and so emptied) whenever the source changes.
+ */
+@Stable
+class LibraryState {
+    internal var stack by mutableStateOf<List<LibraryRoute>>(listOf(LibraryRoute.Home))
+    internal var home by mutableStateOf<HomeShelves?>(null)
+    internal val browse = mutableStateMapOf<LibraryCategory, List<MaItem>>()
+    internal val exhausted = mutableStateMapOf<LibraryCategory, Boolean>()
+    internal var favorites by mutableStateOf<MaSearchResults?>(null)
+    internal var query by mutableStateOf("")
+    private var bound: MusicSource? = null
+
+    internal fun push(route: LibraryRoute) { stack = stack.pushed(route) }
+    internal fun pop() { stack = stack.popped() }
+
+    internal fun bind(source: MusicSource) {
+        if (bound === source) return
+        bound = source
+        stack = listOf(LibraryRoute.Home)
+        home = null
+        browse.clear()
+        exhausted.clear()
+        favorites = null
+        query = ""
+    }
+}
+
+/** What is playing, as the library needs it: which row to mark, and whether it dances. */
+internal data class NowPlayingMark(val id: String?, val playing: Boolean)
+
+/** How many items one page of a paged category asks the server for. */
+internal const val BROWSE_PAGE = 120
+
+/**
+ * Whether a paged list should fetch its next page: the last visible row is within
+ * [threshold] of the end of what is loaded, and the server has not already said
+ * there is no more. Pure so the trigger is testable without a scrolling grid.
+ */
+internal fun shouldLoadMore(lastVisible: Int, loaded: Int, exhausted: Boolean, threshold: Int = 16): Boolean =
+    !exhausted && loaded > 0 && lastVisible >= loaded - threshold
+
+/** "Good morning" / "Good afternoon" / "Good evening" for [hour] (0–23). */
+internal fun greetingFor(hour: Int): String = when (hour) {
+    in 5..11 -> "Good morning"
+    in 12..17 -> "Good afternoon"
+    else -> "Good evening"
+}
+
+/**
+ * The library pane: Home (category cards, a featured album, shelves), category pages,
+ * album / artist / playlist / genre pages, and search — all browsing Jellyfin, all
+ * queueing through MPD via [PanelModel.playAlbum].
  */
 @Composable
-fun LibraryPane(modifier: Modifier, model: PanelModel) {
+fun LibraryPane(modifier: Modifier, model: PanelModel, state: LibraryState = remember { LibraryState() }) {
     val sourceFlow by model.source.collectAsState()
     val source = sourceFlow ?: return NotConnected(modifier)
     val scope = rememberCoroutineScope()
 
-    // Root shows the current category's items; an open album, playlist, genre or artist
-    // replaces it; search overlays.
-    var category by remember { mutableStateOf(LibraryCategory.RECENT) }
-    var rootItems by remember { mutableStateOf<List<MaItem>>(emptyList()) }
-    var favorites by remember { mutableStateOf<MaSearchResults?>(null) }
-    // AlbumDetailView only needs a "header" MaItem and a track list to play through
-    // PanelModel.playAlbum (which reads the tracks, not the header) — so a playlist's or a
-    // genre's tracks reuse it directly rather than a near-identical view being written
-    // twice more.
-    var albumDetail by remember { mutableStateOf<Pair<MaItem, List<MaItem>>?>(null) }
-    var artistDetail by remember { mutableStateOf<Pair<MaItem, List<MaItem>>?>(null) }
-    var searching by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<MaSearchResults?>(null) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(false) }
+    val remote by model.state.collectAsState()
+    val queue by model.queue.collectAsState()
+    val now = NowPlayingMark(
+        id = remote?.index?.takeIf { it >= 0 }?.let { queue.getOrNull(it)?.id },
+        playing = remote?.playing == true,
+    )
 
-    // Root load: re-fetches whenever the category changes. A cold fetch used to show an
-    // empty pane with nothing to say why — `loading` drives a skeleton instead (item 11).
-    LaunchedEffect(source, category) {
-        loading = true
-        loadError = null
-        try {
-            when (category) {
-                LibraryCategory.RECENT -> rootItems = source.recentlyAdded(200)
-                LibraryCategory.ALBUMS -> rootItems = source.albums(0, 200)
-                LibraryCategory.ARTISTS -> rootItems = source.artists()
-                LibraryCategory.PLAYLISTS -> rootItems = source.playlists()
-                LibraryCategory.GENRES -> rootItems = source.genres()
-                LibraryCategory.FAVORITES -> favorites = source.favorites()
-            }
-        } catch (e: Exception) {
-            loadError = e.message ?: "browse failed"
-        }
-        loading = false
-    }
+    LaunchedEffect(source) { state.bind(source) }
 
-    // Search debounce: 350 ms after the last keystroke, then ask the source.
-    LaunchedEffect(query) {
-        if (query.isBlank()) {
-            results = null
-            return@LaunchedEffect
-        }
-        delay(350)
-        try {
-            results = source.search(query)
-        } catch (e: Exception) {
-            loadError = e.message
-        }
+    val play: (MaItem, List<MaItem>, Int) -> Unit = { header, tracks, start ->
+        scope.launch { model.playAlbum(header, tracks, start) }
     }
+    val open: (LibraryRoute) -> Unit = { state.push(it) }
+    val back: () -> Unit = { state.pop() }
 
-    // Jellyfin (or MPD, for a genre/playlist pulled through it) returning nothing for an id
-    // that was clickable a moment ago — deleted between the grid loading and the tap — used
-    // to hit a `!!` here. On this undecorated, WM-less panel that throw took the whole
-    // screen to black with no crash dialog and no way back; every drill-in below routes the
-    // null case to loadError instead.
-    fun openAlbum(id: String) {
-        scope.launch {
-            try {
-                val (album, tracks) = source.albumDetail(id)
-                if (album != null) albumDetail = album to tracks else loadError = "Album not found"
-            } catch (e: Exception) {
-                loadError = e.message
-            }
-        }
-    }
-    fun openArtist(id: String) {
-        scope.launch {
-            try {
-                val (artist, albums) = source.artistDetail(id)
-                if (artist != null) artistDetail = artist to albums else loadError = "Artist not found"
-            } catch (e: Exception) {
-                loadError = e.message
-            }
-        }
-    }
-    fun openPlaylist(playlist: MaItem) {
-        scope.launch {
-            try {
-                albumDetail = playlist to source.playlistTracks(playlist.itemId)
-            } catch (e: Exception) {
-                loadError = e.message
-            }
-        }
-    }
-    fun openGenre(genre: MaItem) {
-        scope.launch {
-            try {
-                albumDetail = genre to source.songsByGenre(genre.name)
-            } catch (e: Exception) {
-                loadError = e.message
-            }
-        }
-    }
-
+    val holder = rememberSaveableStateHolder()
+    val route = state.stack.last()
     Box(modifier) {
-        when {
-            albumDetail != null -> AlbumDetailView(
-                album = albumDetail!!.first,
-                tracks = albumDetail!!.second,
-                onBack = { albumDetail = null },
-                onPlay = { start -> scope.launch { model.playAlbum(albumDetail!!.first, albumDetail!!.second, start) } },
-            )
-            artistDetail != null -> ArtistDetailView(
-                artist = artistDetail!!.first,
-                albums = artistDetail!!.second,
-                onBack = { artistDetail = null },
-                onAlbum = { a -> openAlbum(a.itemId) },
-            )
-            searching -> SearchView(
-                query = query,
-                onQuery = { query = it },
-                results = results,
-                onAlbum = { a -> openAlbum(a.itemId) },
-                onArtist = { a -> openArtist(a.itemId) },
-                onTrack = { t -> scope.launch { model.playAlbum(t, listOf(t), 0) } },
-                onBack = { searching = false; query = ""; results = null },
-            )
-            else -> LibraryRoot(
-                category = category,
-                onCategory = { category = it },
-                items = rootItems,
-                favorites = favorites,
-                loading = loading,
-                error = loadError,
-                onAlbum = { a -> openAlbum(a.itemId) },
-                onArtist = { a -> openArtist(a.itemId) },
-                onPlaylist = ::openPlaylist,
-                onGenre = ::openGenre,
-                onSearch = { searching = true },
-            )
+        holder.SaveableStateProvider(route.key) {
+            when (route) {
+                LibraryRoute.Home -> HomeScreen(source, state, open, play)
+                LibraryRoute.Search -> SearchScreen(source, state, open, play, back)
+                is LibraryRoute.Browse -> BrowseScreen(route.category, source, state, now, open, play, back)
+                is LibraryRoute.Album -> AlbumScreen(route.item, source, now, open, play, back)
+                is LibraryRoute.Artist -> ArtistScreen(route.item, source, now, open, play, back)
+                is LibraryRoute.Playlist -> TrackListScreen(
+                    header = route.item, eyebrow = "Playlist", now = now, play = play, back = back,
+                    load = { source.playlistTracks(route.item.itemId) },
+                )
+                is LibraryRoute.Genre -> TrackListScreen(
+                    header = route.item, eyebrow = "Genre", now = now, play = play, back = back,
+                    load = { source.songsByGenre(route.item.name) },
+                )
+            }
         }
     }
 }
 
+// ─── Home ────────────────────────────────────────────────────────────────────
+
+/** A category card's look: label, glyph, and its own gradient — the page's colour. */
+private data class CategoryLook(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val colors: List<Color>)
+
+private fun lookOf(c: LibraryCategory): CategoryLook = when (c) {
+    LibraryCategory.ALBUMS -> CategoryLook(c.label, Icons.Default.Album, listOf(Color(0xFF8B6CFF), Color(0xFF3B1FA6)))
+    LibraryCategory.ARTISTS -> CategoryLook(c.label, Icons.Default.Person, listOf(Color(0xFFFF7A6B), Color(0xFFB0305F)))
+    LibraryCategory.PLAYLISTS -> CategoryLook(c.label, Icons.AutoMirrored.Filled.PlaylistPlay, listOf(Color(0xFF1FD1B9), Color(0xFF0B6680)))
+    LibraryCategory.GENRES -> CategoryLook(c.label, Icons.Default.Category, listOf(Color(0xFFFFB84D), Color(0xFFD9502B)))
+    LibraryCategory.FAVORITES -> CategoryLook(c.label, Icons.Default.Favorite, listOf(Color(0xFFFF5FA2), Color(0xFF8E2A91)))
+    LibraryCategory.RECENT -> CategoryLook(c.label, Icons.Default.NewReleases, listOf(Color(0xFF4FA9FF), Color(0xFF2443C4)))
+    LibraryCategory.SONGS -> CategoryLook(c.label, Icons.Default.MusicNote, listOf(Color(0xFF8EDB4F), Color(0xFF2B8656)))
+}
+
+private val ShuffleLook = CategoryLook("Shuffle all", Icons.Default.Shuffle, listOf(Color(0xFF5C7CFA), Color(0xFF1FB5C9)))
+
 @Composable
-private fun LibraryRoot(
-    category: LibraryCategory,
-    onCategory: (LibraryCategory) -> Unit,
-    items: List<MaItem>,
-    favorites: MaSearchResults?,
-    loading: Boolean,
-    error: String?,
-    onAlbum: (MaItem) -> Unit,
-    onArtist: (MaItem) -> Unit,
-    onPlaylist: (MaItem) -> Unit,
-    onGenre: (MaItem) -> Unit,
-    onSearch: () -> Unit,
+private fun HomeScreen(
+    source: MusicSource,
+    state: LibraryState,
+    open: (LibraryRoute) -> Unit,
+    play: (MaItem, List<MaItem>, Int) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    val scope = rememberCoroutineScope()
+
+    // Stale-while-revalidate: the shelves from last time show at once, and a fresh load
+    // replaces them — Home is the page the panel sits on, so it must never be blank.
+    LaunchedEffect(source) {
+        state.home = loadHome(source)
+    }
+
+    val listState = rememberLazyListState()
+    val home = state.home
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp),
+            modifier = Modifier.fillMaxSize().touchDragScroll(listState),
         ) {
-            Text(
-                category.label,
-                color = TextPrimary,
-                fontFamily = AppFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = PanelMetrics.PageTitle,
-            )
-            IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, "Search", tint = TextPrimary, modifier = Modifier.size(26.dp))
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(PanelMetrics.ChipGap),
-        ) {
-            LibraryCategory.entries.forEach { c ->
-                val active = c == category
-                Row(
-                    Modifier
-                        .heightIn(min = PanelMetrics.ChipMinHeight)
-                        .clip(RoundedCornerShape(100.dp))
-                        .background(if (active) Glass else Color.Transparent)
-                        .clickable { onCategory(c) }
-                        .padding(horizontal = PanelMetrics.ChipPadH, vertical = PanelMetrics.ChipPadV),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        c.label,
-                        color = if (active) TextPrimary else TextMuted,
-                        fontFamily = AppFont,
-                        fontSize = PanelMetrics.ChipLabel,
+            item(key = "header") {
+                Column {
+                    PageHeader(
+                        title = "Library",
+                        eyebrow = greetingFor(LocalTime.now().hour),
+                        titleSize = 44.sp,
                     )
+                    SearchBar(onClick = { open(LibraryRoute.Search) })
                 }
             }
-        }
-        if (error != null) {
-            Text(
-                error,
-                color = TextMuted,
-                fontFamily = AppFont,
-                fontSize = PanelMetrics.Body,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-        }
-        when {
-            loading -> LoadingGrid()
-            category == LibraryCategory.FAVORITES -> FavoritesView(favorites, onAlbum, onArtist)
-            else -> {
-                val onClick: (MaItem) -> Unit = when (category) {
-                    LibraryCategory.RECENT, LibraryCategory.ALBUMS -> onAlbum
-                    LibraryCategory.ARTISTS -> onArtist
-                    LibraryCategory.PLAYLISTS -> onPlaylist
-                    LibraryCategory.GENRES -> onGenre
-                    LibraryCategory.FAVORITES -> onAlbum // unreachable, handled above
+            item(key = "cards") {
+                CategoryGrid(
+                    onCategory = { open(LibraryRoute.Browse(it)) },
+                    onShuffle = {
+                        scope.launch {
+                            val songs = runCatching { source.randomSongs(100) }.getOrDefault(emptyList())
+                            songs.firstOrNull()?.let { play(it, songs, 0) }
+                        }
+                    },
+                )
+            }
+            if (home == null) {
+                item(key = "skeleton") {
+                    Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
+                        SkeletonBlock(
+                            Modifier.padding(horizontal = PageGutter).fillMaxWidth().height(248.dp),
+                            PanelShapes.Card,
+                        )
+                        ShelfSkeleton()
+                        ShelfSkeleton()
+                    }
                 }
-                ItemGrid(items, onClick)
+            } else {
+                home.featured?.let { f ->
+                    item(key = "featured") {
+                        FeaturedCard(
+                            item = f,
+                            eyebrow = if (home.recentlyPlayed.isNotEmpty()) "Jump back in" else "New in your library",
+                            onOpen = { open(LibraryRoute.Album(f)) },
+                            onPlay = {
+                                scope.launch {
+                                    val (_, tracks) = runCatching { source.albumDetail(f.itemId) }
+                                        .getOrDefault(null to emptyList())
+                                    if (tracks.isNotEmpty()) play(f, tracks, 0)
+                                }
+                            },
+                        )
+                    }
+                }
+                homeShelf("continue", "Continue listening", home.continueListening) { t -> play(t, listOf(t), 0) }
+                homeShelf("played", "Recently played", home.recentlyPlayed) { open(LibraryRoute.Album(it)) }
+                homeShelf(
+                    "added", "Recently added", home.recentlyAdded,
+                    onSeeAll = { open(LibraryRoute.Browse(LibraryCategory.RECENT)) },
+                ) { open(LibraryRoute.Album(it)) }
+                homeShelf("most", "Most played", home.mostPlayed) { open(LibraryRoute.Album(it)) }
+                homeShelf(
+                    "favAlbums", "Favourite albums", home.favoriteAlbums,
+                    onSeeAll = { open(LibraryRoute.Browse(LibraryCategory.FAVORITES)) },
+                ) { open(LibraryRoute.Album(it)) }
+                homeShelf("favArtists", "Favourite artists", home.favoriteArtists, circular = true) {
+                    open(LibraryRoute.Artist(it))
+                }
+                homeShelf("rediscover", "Rediscover", home.rediscover) { open(LibraryRoute.Album(it)) }
+            }
+        }
+        VerticalScrollbar(
+            rememberScrollbarAdapter(listState),
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+        )
+    }
+}
+
+private fun LazyListScope.homeShelf(
+    key: String,
+    title: String,
+    items: List<MaItem>,
+    circular: Boolean = false,
+    onSeeAll: (() -> Unit)? = null,
+    onClick: (MaItem) -> Unit,
+) {
+    if (items.isEmpty()) return
+    item(key = key) {
+        Shelf(
+            title = title,
+            items = items,
+            onClick = onClick,
+            circular = circular,
+            action = onSeeAll?.let { "See all" },
+            onAction = onSeeAll,
+        )
+    }
+}
+
+/** Every home query at once; a failed one is an empty shelf, not a failed page. */
+private suspend fun loadHome(source: MusicSource): HomeShelves = coroutineScope {
+    suspend fun <T> safe(block: suspend () -> List<T>): List<T> = runCatching { block() }.getOrDefault(emptyList())
+    val cont = async { safe { source.continueListening(12) } }
+    val played = async { safe { source.recentlyPlayed(24) } }
+    val added = async { safe { source.recentlyAdded(24) } }
+    val most = async { safe { source.mostPlayed(24) } }
+    val favs = async { runCatching { source.favorites() }.getOrNull() }
+    val random = async { safe { source.randomAlbums(16) } }
+    val f = favs.await()
+    HomeShelves(
+        continueListening = cont.await(),
+        recentlyPlayed = played.await(),
+        recentlyAdded = added.await(),
+        mostPlayed = most.await(),
+        favoriteAlbums = f?.albums.orEmpty(),
+        favoriteArtists = f?.artists.orEmpty(),
+        rediscover = random.await(),
+    )
+}
+
+/** The tap-to-search bar under the title — a whole-width target, not a small icon. */
+@Composable
+private fun SearchBar(onClick: () -> Unit) {
+    Row(
+        Modifier
+            .padding(horizontal = PageGutter)
+            .fillMaxWidth()
+            .height(64.dp)
+            .glassSurface(PanelShapes.Pill, inkOn(0.07f), border = Hairline)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 22.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(Icons.Default.Search, null, tint = TextSecondary, modifier = Modifier.size(28.dp))
+        Text("Artists, albums, songs", color = TextMuted, fontFamily = AppFont, fontSize = 19.sp)
+    }
+}
+
+/** The category cards, four to a row — two rows fill the panel's width with colour. */
+@Composable
+private fun CategoryGrid(onCategory: (LibraryCategory) -> Unit, onShuffle: () -> Unit) {
+    val cards: List<Pair<CategoryLook, () -> Unit>> =
+        LibraryCategory.entries.map { c -> lookOf(c) to { onCategory(c) } } + (ShuffleLook to onShuffle)
+    Column(
+        Modifier.padding(horizontal = PageGutter),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        cards.chunked(4).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                row.forEach { (look, onClick) ->
+                    CategoryCard(look.label, look.icon, look.colors, onClick, Modifier.weight(1f))
+                }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
 }
 
+/**
+ * The hero card: one album, big — its own art blurred behind it, the cover, and a
+ * Play button. The page's focal point, so Home never opens on a wall of equal tiles.
+ */
 @Composable
-private fun ItemGrid(items: List<MaItem>, onClick: (MaItem) -> Unit) {
+private fun FeaturedCard(item: MaItem, eyebrow: String, onOpen: () -> Unit, onPlay: () -> Unit) {
+    val accent = rememberAccent()
+    Box(
+        Modifier
+            .padding(horizontal = PageGutter)
+            .fillMaxWidth()
+            .height(252.dp)
+            .clip(PanelShapes.Card)
+            .background(Brush.linearGradient(placeholderColors(item.name)))
+            .clickable(onClick = onOpen),
+    ) {
+        if (!item.image.isNullOrBlank()) {
+            AsyncImage(
+                model = item.image,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .matchParentSize()
+                    .blur(48.dp, BlurredEdgeTreatment.Rectangle)
+                    .alpha(0.85f),
+            )
+        }
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.horizontalGradient(listOf(Ink.a(0.15f), Ink.a(0.55f), Ink.a(0.78f)))
+            )
+        )
+        Row(
+            Modifier.fillMaxSize().padding(22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            ArtImage(
+                url = item.image,
+                name = item.name,
+                modifier = Modifier
+                    .size(208.dp)
+                    .shadow(24.dp, PanelShapes.Tile, ambientColor = Color.Black, spotColor = Color.Black),
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Eyebrow(eyebrow, Color.White.a(0.85f))
+                Text(
+                    item.name,
+                    color = Color.White,
+                    fontFamily = AppFont,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 30.sp,
+                    lineHeight = 34.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                item.subtitle?.let {
+                    Text(it, color = Color.White.a(0.78f), fontFamily = AppFont, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.height(10.dp))
+                PillButton("Play", icon = Icons.Default.PlayArrow, color = accent, onClick = onPlay)
+            }
+        }
+    }
+}
+
+// ─── Category pages ──────────────────────────────────────────────────────────
+
+@Composable
+private fun BrowseScreen(
+    category: LibraryCategory,
+    source: MusicSource,
+    state: LibraryState,
+    now: NowPlayingMark,
+    open: (LibraryRoute) -> Unit,
+    play: (MaItem, List<MaItem>, Int) -> Unit,
+    back: () -> Unit,
+) {
+    var error by remember(category) { mutableStateOf<String?>(null) }
+    var loadingMore by remember(category) { mutableStateOf(false) }
+    val paged = category == LibraryCategory.ALBUMS || category == LibraryCategory.SONGS
+
+    suspend fun fetch(offset: Int): List<MaItem> = when (category) {
+        LibraryCategory.ALBUMS -> source.albums(offset, BROWSE_PAGE)
+        LibraryCategory.SONGS -> source.tracks(offset, BROWSE_PAGE)
+        LibraryCategory.RECENT -> source.recentlyAdded(200)
+        LibraryCategory.ARTISTS -> source.artists()
+        LibraryCategory.PLAYLISTS -> source.playlists()
+        LibraryCategory.GENRES -> source.genres()
+        LibraryCategory.FAVORITES -> emptyList()
+    }
+
+    LaunchedEffect(category, source) {
+        try {
+            if (category == LibraryCategory.FAVORITES) {
+                state.favorites = source.favorites()
+            } else if (state.browse[category] == null) {
+                val first = fetch(0)
+                state.browse[category] = first
+                state.exhausted[category] = !paged || first.size < BROWSE_PAGE
+            }
+        } catch (e: Exception) {
+            error = e.message ?: "Browse failed"
+        }
+    }
+
+    val scope = rememberCoroutineScope()
+    fun loadMore() {
+        val have = state.browse[category] ?: return
+        if (loadingMore || state.exhausted[category] == true) return
+        loadingMore = true
+        scope.launch {
+            try {
+                val next = fetch(have.size)
+                state.browse[category] = have + next
+                state.exhausted[category] = next.size < BROWSE_PAGE
+            } catch (_: Exception) {
+                state.exhausted[category] = true
+            }
+            loadingMore = false
+        }
+    }
+
+    val items = state.browse[category]
+    val count = if (category == LibraryCategory.FAVORITES) null else items?.size
+    val noun = when (category) {
+        LibraryCategory.ALBUMS, LibraryCategory.RECENT -> "albums"
+        LibraryCategory.ARTISTS -> "artists"
+        LibraryCategory.PLAYLISTS -> "playlists"
+        LibraryCategory.GENRES -> "genres"
+        LibraryCategory.SONGS -> "songs"
+        LibraryCategory.FAVORITES -> ""
+    }
+    val subtitle = count?.let {
+        if (paged && state.exhausted[category] != true) "$it+ $noun" else "$it $noun"
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        PageHeader(title = category.label, subtitle = subtitle, onBack = back)
+        when {
+            error != null -> EmptyState(Icons.Default.ErrorOutline, "Couldn't load ${category.label.lowercase()}", error!!)
+            category == LibraryCategory.FAVORITES -> FavoritesBody(state.favorites, now, open, play)
+            items == null -> GridSkeleton(circular = category == LibraryCategory.ARTISTS)
+            items.isEmpty() -> EmptyState(lookOf(category).icon, "No ${category.label.lowercase()}", "Nothing in the library here yet.")
+            category == LibraryCategory.SONGS -> SongList(items, now, play, onNearEnd = ::loadMore)
+            category == LibraryCategory.GENRES -> GenreGrid(items) { open(LibraryRoute.Genre(it)) }
+            else -> ItemGrid(
+                items = items,
+                circular = category == LibraryCategory.ARTISTS,
+                onNearEnd = if (paged) ::loadMore else null,
+                onClick = { item ->
+                    open(
+                        when (category) {
+                            LibraryCategory.ARTISTS -> LibraryRoute.Artist(item)
+                            LibraryCategory.PLAYLISTS -> LibraryRoute.Playlist(item)
+                            else -> LibraryRoute.Album(item)
+                        }
+                    )
+                },
+            )
+        }
+    }
+}
+
+/** Four columns on the portrait panel — ~175dp covers, big enough to recognise at a glance. */
+private const val GRID_COLUMNS = 4
+
+@Composable
+private fun ItemGrid(
+    items: List<MaItem>,
+    circular: Boolean,
+    onNearEnd: (() -> Unit)?,
+    onClick: (MaItem) -> Unit,
+) {
     val gridState = rememberLazyGridState()
+    if (onNearEnd != null) {
+        LaunchedEffect(gridState, items.size) {
+            snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+                .distinctUntilChanged()
+                .collect { last -> if (shouldLoadMore(last, items.size, exhausted = false)) onNearEnd() }
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             state = gridState,
-            columns = GridCells.Fixed(6),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            columns = GridCells.Fixed(GRID_COLUMNS),
+            contentPadding = PaddingValues(start = PageGutter, end = PageGutter, top = 8.dp, bottom = 36.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
             modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
         ) {
-            items(items, span = { GridItemSpan(2) }, key = { it.itemId }) { item ->
-                AlbumTile(item, onClick)
+            itemsIndexed(items, key = { i, it -> "$i:${it.itemId}" }) { _, item ->
+                ArtTile(item, onClick, circular = circular)
             }
         }
-        // The only sign a touch panel gets that a grid continues below the fold —
-        // there is no wheel and no cursor to hint at it otherwise.
         VerticalScrollbar(
             rememberScrollbarAdapter(gridState),
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
@@ -351,440 +669,298 @@ private fun ItemGrid(items: List<MaItem>, onClick: (MaItem) -> Unit) {
     }
 }
 
-/**
- * A cold fetch of 200 albums used to show a blank pane with nothing on it to say whether
- * that was "empty library" or "still loading" — this is that difference made visible.
- * Shape copied from `:app`'s `ui/screens/LibraryStates.kt` `SkeletonRow`/`ConnectingState`
- * (not the file itself — it depends on Android-only types this module doesn't have).
- */
 @Composable
-private fun LoadingGrid() {
+private fun GridSkeleton(circular: Boolean) {
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.padding(horizontal = PageGutter, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         repeat(3) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                repeat(3) {
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .aspectRatio(1f)
-                            .glassSurface(RoundedCornerShape(12.dp), Glass, border = Hairline),
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                repeat(GRID_COLUMNS) {
+                    SkeletonBlock(
+                        Modifier.weight(1f).aspectRatio(1f),
+                        if (circular) androidx.compose.foundation.shape.CircleShape else PanelShapes.Tile,
                     )
                 }
             }
         }
+    }
+}
+
+/** Genres as colour cards — a genre has no artwork, so it gets a gradient of its own. */
+@Composable
+private fun GenreGrid(items: List<MaItem>, onClick: (MaItem) -> Unit) {
+    val gridState = rememberLazyGridState()
+    LazyVerticalGrid(
+        state = gridState,
+        columns = GridCells.Fixed(3),
+        contentPadding = PaddingValues(start = PageGutter, end = PageGutter, top = 8.dp, bottom = 36.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
+    ) {
+        itemsIndexed(items, key = { i, it -> "$i:${it.itemId}" }) { _, g ->
+            CategoryCard(g.name, Icons.Default.Category, genreColors(g.name), onClick = { onClick(g) })
+        }
+    }
+}
+
+@Composable
+private fun SongList(
+    items: List<MaItem>,
+    now: NowPlayingMark,
+    play: (MaItem, List<MaItem>, Int) -> Unit,
+    onNearEnd: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, items.size) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+            .distinctUntilChanged()
+            .collect { last -> if (shouldLoadMore(last, items.size, exhausted = false)) onNearEnd() }
+    }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = 36.dp),
+            modifier = Modifier.fillMaxSize().touchDragScroll(listState),
+        ) {
+            itemsIndexed(items, key = { i, it -> "$i:${it.itemId}" }) { i, t ->
+                TrackRow(
+                    track = t,
+                    lead = TrackLead.Art,
+                    now = now,
+                    // A song list is the whole library; the queue is the tapped song and
+                    // the next hundred after it, not every song on the server.
+                    onClick = { play(t, items.subList(i, minOf(items.size, i + 100)), 0) },
+                )
+            }
+        }
+        VerticalScrollbar(
+            rememberScrollbarAdapter(listState),
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+        )
     }
 }
 
 /**
- * Favourites returns artists/albums/tracks/playlists together ([MaSearchResults]) rather
- * than one flat list, so it can't share [ItemGrid] — item 10 asked for its albums and
- * artists specifically. Each section is its own horizontally-scrolling shelf inside one
- * vertically-scrolling column, which sidesteps the nested-vertical-scrollable problem a
- * vertical grid-of-grids would have (and, not needing a keyed header inside a single
- * `LazyVerticalGrid`, sidesteps the duplicate-section-title crash `:app` documents for that
- * pattern too — see [SearchView] for where that trap is real).
+ * Favourites as a full page: albums as a grid, artists as a round shelf, then the
+ * favourite songs (playable as a list) and playlists — every kind Jellyfin returns,
+ * where the old page showed two shelves and left the rest of the panel empty.
  */
 @Composable
-private fun FavoritesView(results: MaSearchResults?, onAlbum: (MaItem) -> Unit, onArtist: (MaItem) -> Unit) {
-    val scrollState = rememberScrollState()
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .touchDragScroll(scrollState, Orientation.Vertical)
-            .padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        val albums = results?.albums ?: emptyList()
-        val artists = results?.artists ?: emptyList()
-        if (results != null && albums.isEmpty() && artists.isEmpty()) {
-            Text(
-                "No favourites yet.",
-                color = TextMuted,
-                fontFamily = AppFont,
-                fontSize = PanelMetrics.Body,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-        }
-        if (albums.isNotEmpty()) ItemShelf("Albums", albums, onAlbum)
-        if (artists.isNotEmpty()) ItemShelf("Artists", artists, onArtist)
-    }
-}
-
-/** One titled, horizontally-scrolling row of tiles — a "shelf". */
-@Composable
-private fun ItemShelf(title: String, items: List<MaItem>, onClick: (MaItem) -> Unit) {
-    Column {
-        Text(
-            title,
-            color = TextPrimary,
-            fontFamily = AppFont,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = PanelMetrics.SectionTitle,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
-        )
-        val rowState = rememberLazyListState()
-        LazyRow(
-            state = rowState,
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth().touchDragScroll(rowState, Orientation.Horizontal),
-        ) {
-            items(items, key = { it.itemId }) { item ->
-                Box(Modifier.width(160.dp)) { AlbumTile(item, onClick) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AlbumTile(album: MaItem, onClick: (MaItem) -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clickable { onClick(album) },
-    ) {
-        AsyncImage(
-            model = album.image,
-            contentDescription = album.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .glassSurface(RoundedCornerShape(12.dp), Glass, border = Hairline),
-        )
-        Text(
-            album.name,
-            color = TextPrimary,
-            fontFamily = AppFont,
-            fontSize = PanelMetrics.TileTitle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 6.dp),
-        )
-        Text(
-            album.subtitle ?: "",
-            color = TextMuted,
-            fontFamily = AppFont,
-            fontSize = PanelMetrics.TileSubtitle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun AlbumDetailView(
-    album: MaItem,
-    tracks: List<MaItem>,
-    onBack: () -> Unit,
-    onPlay: (Int) -> Unit,
-) {
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TextPrimary)
-            }
-            AsyncImage(
-                model = album.image,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .padding(start = 4.dp)
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Glass),
-            )
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(
-                    album.name,
-                    color = TextPrimary,
-                    fontFamily = AppFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = PanelMetrics.PageTitle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    album.subtitle ?: "",
-                    color = TextMuted,
-                    fontFamily = AppFont,
-                    fontSize = PanelMetrics.RowSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Button(
-                onClick = { onPlay(0) },
-                modifier = Modifier
-                    .padding(end = 16.dp)
-                    .heightIn(min = PanelMetrics.ButtonMinHeight),
-            ) {
-                Text("Play album", fontFamily = AppFont, fontSize = PanelMetrics.FieldLabel)
-            }
-        }
-        val trackState = rememberLazyListState()
-        Box(Modifier.fillMaxSize()) {
-            LazyColumn(
-                state = trackState,
-                contentPadding = PaddingValues(bottom = 24.dp),
-                modifier = Modifier.fillMaxSize().touchDragScroll(trackState),
-            ) {
-                itemsIndexed(tracks) { i, t ->
-                    TrackRow(
-                        n = i + 1,
-                        title = t.name,
-                        artist = t.subtitle,
-                        duration = t.duration,
-                        onClick = { onPlay(i) },
-                    )
-                }
-            }
-            VerticalScrollbar(
-                rememberScrollbarAdapter(trackState),
-                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ArtistDetailView(
-    artist: MaItem,
-    albums: List<MaItem>,
-    onBack: () -> Unit,
-    onAlbum: (MaItem) -> Unit,
-) {
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TextPrimary)
-            }
-            Text(
-                artist.name,
-                color = TextPrimary,
-                fontFamily = AppFont,
-                fontWeight = FontWeight.Bold,
-                fontSize = PanelMetrics.PageTitle,
-            )
-        }
-        val gridState = rememberLazyGridState()
-        Box(Modifier.fillMaxSize()) {
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Fixed(6),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
-            ) {
-                items(albums, span = { GridItemSpan(2) }, key = { it.itemId }) { album -> AlbumTile(album, onAlbum) }
-            }
-            VerticalScrollbar(
-                rememberScrollbarAdapter(gridState),
-                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun SearchView(
-    query: String,
-    onQuery: (String) -> Unit,
+private fun FavoritesBody(
     results: MaSearchResults?,
-    onAlbum: (MaItem) -> Unit,
-    onArtist: (MaItem) -> Unit,
-    onTrack: (MaItem) -> Unit,
-    onBack: () -> Unit,
+    now: NowPlayingMark,
+    open: (LibraryRoute) -> Unit,
+    play: (MaItem, List<MaItem>, Int) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    if (results == null) return GridSkeleton(circular = false)
+    if (results.albums.isEmpty() && results.artists.isEmpty() && results.tracks.isEmpty() && results.playlists.isEmpty()) {
+        return EmptyState(
+            Icons.Default.Favorite,
+            "No favourites yet",
+            "Heart an album or an artist and it lands here.",
+        )
+    }
+    val gridState = rememberLazyGridState()
+    Box(Modifier.fillMaxSize()) {
+        LazyVerticalGrid(
+            state = gridState,
+            columns = GridCells.Fixed(GRID_COLUMNS),
+            contentPadding = PaddingValues(top = 4.dp, bottom = 36.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
+            modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TextPrimary)
+            if (results.artists.isNotEmpty()) {
+                fullSpan("artists") {
+                    Shelf("Artists", results.artists, { open(LibraryRoute.Artist(it)) }, circular = true, tileWidth = 150.dp)
+                }
             }
-            TextField(
-                value = query,
-                onValueChange = onQuery,
-                placeholder = {
-                    Text("Search the library", fontFamily = AppFont, fontSize = PanelMetrics.RowTitle)
-                },
-                textStyle = TextStyle(fontSize = PanelMetrics.RowTitle, fontFamily = AppFont),
-                singleLine = true,
-                colors = TextFieldDefaults.colors(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = PanelMetrics.ButtonMinHeight)
-                    .padding(end = 16.dp),
-            )
+            if (results.albums.isNotEmpty()) {
+                fullSpan("albumsHdr") { SectionHeader("Albums") }
+                tileRows("album", results.albums) { open(LibraryRoute.Album(it)) }
+            }
+            if (results.tracks.isNotEmpty()) {
+                fullSpan("tracksHdr") {
+                    SectionHeader("Songs", action = "Play all", onAction = { play(results.tracks.first(), results.tracks, 0) })
+                }
+                fullSpan("tracks") {
+                    Column {
+                        results.tracks.forEachIndexed { i, t ->
+                            TrackRow(track = t, lead = TrackLead.Art, now = now, onClick = { play(t, results.tracks, i) })
+                        }
+                    }
+                }
+            }
+            if (results.playlists.isNotEmpty()) {
+                fullSpan("playlists") {
+                    Shelf("Playlists", results.playlists, { open(LibraryRoute.Playlist(it)) })
+                }
+            }
         }
-        if (results != null) {
-            // The results shrink to fit above the keyboard rather than sliding under it —
-            // weight(1f) here leaves the keyboard below its own fixed size.
-            SearchResultsSections(
-                results = results,
-                onAlbum = onAlbum,
-                onArtist = onArtist,
-                onTrack = onTrack,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-            )
-        }
-        // This panel is touch-only with no window manager and no way to run a system
-        // on-screen keyboard (see OnScreenKeyboard.kt's doc comment for why that was tried
-        // and abandoned) — so search draws its own keyboard, directly below the results,
-        // only while this pane is showing.
-        OnScreenKeyboard(
-            onKey = { c -> onQuery(applyKey(query, OnScreenKeyboardKey.Char(c))) },
-            onBackspace = { onQuery(applyKey(query, OnScreenKeyboardKey.Backspace)) },
-            onClear = { onQuery(applyKey(query, OnScreenKeyboardKey.Clear)) },
-            onDone = onBack,
+        VerticalScrollbar(
+            rememberScrollbarAdapter(gridState),
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
         )
     }
 }
 
+internal fun LazyGridScope.fullSpan(key: String, content: @Composable () -> Unit) {
+    item(key = key, span = { GridItemSpan(maxLineSpan) }) { content() }
+}
+
 /**
- * Search results as titled sections — artists, albums, tracks — instead of the old
- * albums-only rendering that dropped the other two entirely (item 8).
- *
- * Deliberately *not* a single `LazyVerticalGrid` keyed on a per-section header item: `:app`
- * documents that pattern crashing on a duplicate key when two sections share a title, and
- * the fix here is simpler than deduping — don't give the headers grid keys at all. This is
- * one scrolling `Column` (shelves for artists/albums, plain rows for tracks, all un-lazy),
- * which also sidesteps a `LazyColumn`-inside-a-scrolling-`Column` nesting problem. Search
- * result counts are server-capped, not "every track in the library", so skipping laziness
- * here costs nothing in practice.
+ * Tiles laid into a full-width grid inside a grid whose own edge padding is zero (so
+ * the full-span shelves can bleed to the edge): each tile pads itself onto the gutter.
+ * One row per item-group keeps the gutter on the outer tiles only.
  */
-@Composable
-private fun SearchResultsSections(
-    results: MaSearchResults,
-    onAlbum: (MaItem) -> Unit,
-    onArtist: (MaItem) -> Unit,
-    onTrack: (MaItem) -> Unit,
-    modifier: Modifier,
+internal fun LazyGridScope.tileRows(
+    prefix: String,
+    items: List<MaItem>,
+    circular: Boolean = false,
+    onClick: (MaItem) -> Unit,
 ) {
-    val scrollState = rememberScrollState()
-    Column(
-        modifier
-            .verticalScroll(scrollState)
-            .touchDragScroll(scrollState, Orientation.Vertical)
-            .padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        if (results.artists.isEmpty() && results.albums.isEmpty() && results.tracks.isEmpty()) {
-            Text(
-                "No results.",
-                color = TextMuted,
-                fontFamily = AppFont,
-                fontSize = PanelMetrics.Body,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
+    items.chunked(GRID_COLUMNS).forEachIndexed { r, row ->
+        fullSpan("$prefix-row-$r") {
+            Row(
+                Modifier.padding(horizontal = PageGutter),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                row.forEach { ArtTile(it, onClick, Modifier.weight(1f), circular = circular) }
+                repeat(GRID_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
+            }
         }
-        if (results.artists.isNotEmpty()) ItemShelf("Artists", results.artists, onArtist)
-        if (results.albums.isNotEmpty()) ItemShelf("Albums", results.albums, onAlbum)
-        if (results.tracks.isNotEmpty()) {
-            Column {
-                Text(
-                    "Tracks",
-                    color = TextPrimary,
-                    fontFamily = AppFont,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = PanelMetrics.SectionTitle,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
-                )
-                results.tracks.forEachIndexed { i, t ->
-                    TrackRow(
-                        n = i + 1,
-                        title = t.name,
-                        artist = t.subtitle,
-                        duration = t.duration,
-                        onClick = { onTrack(t) },
+    }
+}
+
+// ─── Search ──────────────────────────────────────────────────────────────────
+
+@Composable
+private fun SearchScreen(
+    source: MusicSource,
+    state: LibraryState,
+    open: (LibraryRoute) -> Unit,
+    play: (MaItem, List<MaItem>, Int) -> Unit,
+    back: () -> Unit,
+) {
+    var results by remember { mutableStateOf<MaSearchResults?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val query = state.query
+
+    // 350 ms after the last key, then ask the source.
+    LaunchedEffect(query) {
+        if (query.isBlank()) { results = null; return@LaunchedEffect }
+        delay(350)
+        try {
+            results = source.search(query)
+            error = null
+        } catch (e: Exception) {
+            error = e.message
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = PageGutter, end = PageGutter, top = 20.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            CircleButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onClick = back)
+            Row(
+                Modifier
+                    .weight(1f)
+                    .height(64.dp)
+                    .glassSurface(PanelShapes.Pill, inkOn(0.08f), border = Hairline)
+                    .padding(horizontal = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(Icons.Default.Search, null, tint = TextSecondary, modifier = Modifier.size(28.dp))
+                Box(Modifier.weight(1f)) {
+                    if (query.isEmpty()) {
+                        Text("Artists, albums, songs", color = TextMuted, fontFamily = AppFont, fontSize = 20.sp)
+                    }
+                    // Still a real text field, so a USB keyboard plugged into the NUC
+                    // types here too; the drawn keyboard below is the touch path.
+                    BasicTextField(
+                        value = query,
+                        onValueChange = { state.query = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = TextPrimary, fontFamily = AppFont, fontSize = 20.sp),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(rememberAccent()),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
         }
+
+        val r = results
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            when {
+                error != null -> EmptyState(Icons.Default.ErrorOutline, "Search failed", error!!)
+                query.isBlank() -> EmptyState(
+                    Icons.Default.Search,
+                    "Search your library",
+                    "Type an artist, an album or a song.",
+                )
+                r == null -> Column(Modifier.padding(top = 8.dp)) { ShelfSkeleton(tileWidth = 150.dp) }
+                r.artists.isEmpty() && r.albums.isEmpty() && r.tracks.isEmpty() && r.playlists.isEmpty() ->
+                    EmptyState(Icons.Default.LibraryMusic, "No results", "Nothing matches “$query”.")
+                else -> SearchResults(r, open, play)
+            }
+        }
+
+        OnScreenKeyboard(
+            onKey = { c -> state.query = applyKey(state.query, OnScreenKeyboardKey.Char(c)) },
+            onBackspace = { state.query = applyKey(state.query, OnScreenKeyboardKey.Backspace) },
+            onClear = { state.query = applyKey(state.query, OnScreenKeyboardKey.Clear) },
+            onDone = back,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
     }
 }
 
 @Composable
-private fun TrackRow(
-    n: Int,
-    title: String,
-    artist: String?,
-    duration: Int?,
-    onClick: () -> Unit,
+private fun SearchResults(
+    r: MaSearchResults,
+    open: (LibraryRoute) -> Unit,
+    play: (MaItem, List<MaItem>, Int) -> Unit,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            // The now-playing screen's row scale — the panel is read at arm's length,
-            // so rows give the hand 64dp and the eye 18/14sp (PanelMetrics).
-            .heightIn(min = PanelMetrics.RowMinHeight)
-            .clickable { onClick() }
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    val listState = rememberLazyListState()
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+        modifier = Modifier.fillMaxSize().touchDragScroll(listState),
     ) {
-        Text(
-            "$n",
-            color = TextMuted,
-            fontSize = PanelMetrics.Meta,
-            fontFamily = AppFont,
-            modifier = Modifier.width(28.dp),
-        )
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                color = TextPrimary,
-                fontFamily = AppFont,
-                fontSize = PanelMetrics.RowTitle,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (artist != null) {
-                Text(
-                    artist,
-                    color = TextMuted,
-                    fontFamily = AppFont,
-                    fontSize = PanelMetrics.RowSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        if (r.artists.isNotEmpty()) item(key = "artists") {
+            Shelf("Artists", r.artists, { open(LibraryRoute.Artist(it)) }, circular = true, tileWidth = 140.dp)
+        }
+        if (r.albums.isNotEmpty()) item(key = "albums") {
+            Shelf("Albums", r.albums, { open(LibraryRoute.Album(it)) }, tileWidth = 150.dp)
+        }
+        if (r.tracks.isNotEmpty()) item(key = "tracks") {
+            Column {
+                SectionHeader("Songs")
+                r.tracks.forEachIndexed { i, t ->
+                    TrackRow(track = t, lead = TrackLead.Art, now = NowPlayingMark(null, false), onClick = { play(t, r.tracks, i) })
+                }
             }
         }
-        Text(
-            duration?.let { formatMsLocal(it * 1000L) } ?: "",
-            color = TextMuted,
-            fontSize = PanelMetrics.Meta,
-            fontFamily = AppFont,
-        )
+        if (r.playlists.isNotEmpty()) item(key = "playlists") {
+            Shelf("Playlists", r.playlists, { open(LibraryRoute.Playlist(it)) }, tileWidth = 150.dp)
+        }
     }
 }
 
 @Composable
 private fun NotConnected(modifier: Modifier) {
     Box(modifier, contentAlignment = Alignment.Center) {
-        Text(
-            "Configure Jellyfin in Settings, then Apply.",
-            color = TextMuted,
-            fontFamily = AppFont,
-            fontSize = PanelMetrics.Body,
+        EmptyState(
+            Icons.Default.LibraryMusic,
+            "Connect your library",
+            "Add your Jellyfin server in Settings, then Apply.",
         )
     }
-}
-
-private fun formatMsLocal(ms: Long): String {
-    val s = ms / 1000
-    return "%d:%02d".format(s / 60, s % 60)
 }

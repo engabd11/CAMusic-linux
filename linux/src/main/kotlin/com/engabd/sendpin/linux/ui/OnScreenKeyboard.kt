@@ -7,21 +7,29 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.engabd.sendpin.ui.design.glassSurface
+import com.engabd.sendpin.ui.design.rememberAccent
 import com.engabd.sendpin.ui.theme.AppFont
-import com.engabd.sendpin.ui.theme.Glass
 import com.engabd.sendpin.ui.theme.Hairline
+import com.engabd.sendpin.ui.theme.Ink
 import com.engabd.sendpin.ui.theme.TextPrimary
+import com.engabd.sendpin.ui.theme.inkOn
 
 /**
  * An in-app QWERTY keyboard, drawn inside our own window instead of shelling out to a
@@ -46,8 +54,10 @@ import com.engabd.sendpin.ui.theme.TextPrimary
  * drives it directly via [onKey]/[onBackspace]/[onClear] rather than fighting the
  * `TextField` for focus.
  *
- * Lowercase only, no shift key — this drives a library search box, not general text entry,
- * and a shift row is complexity this keyboard doesn't need.
+ * Search needs only lowercase letters and digits. [symbols] adds what the Settings
+ * fields need on top — a shift key (tokens can be mixed-case) and a row of the
+ * punctuation URLs and paths are made of — so a server address can be typed on the
+ * panel itself rather than over SSH into the settings file.
  */
 @Composable
 fun OnScreenKeyboard(
@@ -55,62 +65,84 @@ fun OnScreenKeyboard(
     onBackspace: () -> Unit,
     onClear: () -> Unit,
     onDone: () -> Unit,
+    modifier: Modifier = Modifier,
+    symbols: Boolean = false,
 ) {
+    var shift by remember { mutableStateOf(false) }
+    val type: (String) -> Unit = { k -> onKey(if (shift) k[0].uppercaseChar() else k[0]) }
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .glassSurface(RoundedCornerShape(16.dp), Glass, border = Hairline)
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .glassSurface(RoundedCornerShape(24.dp), inkOn(0.06f), border = Hairline)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         KeyRow(KEYBOARD_DIGIT_ROW.map { it.toString() }) { onKey(it[0]) }
+        if (symbols) KeyRow(KEYBOARD_SYMBOL_ROW.map { it.toString() }) { onKey(it[0]) }
         KEYBOARD_LETTER_ROWS.forEach { row ->
-            KeyRow(row.map { it.toString() }) { onKey(it[0]) }
+            KeyRow(row.map { if (shift) it.uppercase() else it.toString() }) { type(it) }
         }
         // Bottom row: space gets most of the width (it's what artist/album names need
-        // most), the rest are fixed-weight utility keys.
+        // most), the rest are fixed-weight utility keys; done is the accent key.
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (symbols) Key("⇧", weight = 1.2f, lit = shift, onClick = { shift = !shift })
             Key("clear", weight = 1.5f, onClick = onClear)
             Key("space", weight = 4f, onClick = { onKey(' ') })
             Key("⌫", weight = 1.5f, onClick = onBackspace)
-            Key("done", weight = 1.5f, onClick = onDone)
+            Key("done", weight = 1.7f, primary = true, onClick = onDone)
         }
     }
 }
 
 @Composable
 private fun KeyRow(keys: List<String>, onKey: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         keys.forEach { k -> Key(k, weight = 1f, onClick = { onKey(k) }) }
     }
 }
 
-/** One key — 48dp minimum height, matching the touch-target floor set elsewhere on the panel. */
+/**
+ * One key — 58dp tall, above the panel's touch floor: a keyboard is typed with a
+ * fingertip at arm's length, and a missed key costs a backspace.
+ */
 @Composable
-private fun RowScope.Key(label: String, weight: Float, onClick: () -> Unit) {
+private fun RowScope.Key(
+    label: String,
+    weight: Float,
+    primary: Boolean = false,
+    lit: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val accent = rememberAccent()
+    val shape = RoundedCornerShape(12.dp)
     Row(
         Modifier
             .weight(weight)
-            .heightIn(min = 48.dp)
-            .glassSurface(RoundedCornerShape(10.dp), Glass, border = Hairline)
+            .height(58.dp)
+            .then(
+                if (primary || lit) Modifier.clip(shape).background(if (primary) accent else accent.copy(alpha = 0.3f))
+                else Modifier.clip(shape).background(inkOn(0.09f))
+            )
             .clickable(onClick = onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             label,
-            color = TextPrimary,
+            color = if (primary) Ink else TextPrimary,
             fontFamily = AppFont,
-            fontSize = 15.sp,
+            fontWeight = if (primary) FontWeight.Bold else FontWeight.Medium,
+            fontSize = if (label.length == 1) 22.sp else 17.sp,
             textAlign = TextAlign.Center,
         )
     }
 }
 
 private const val KEYBOARD_DIGIT_ROW = "1234567890"
+private const val KEYBOARD_SYMBOL_ROW = ".:/-_@?=&~"
 private val KEYBOARD_LETTER_ROWS = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
 
 /**
