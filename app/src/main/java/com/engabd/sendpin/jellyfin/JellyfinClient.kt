@@ -56,6 +56,12 @@ class JellyfinClient(
     /** Which library to browse. Blank means the whole server. */
     @Volatile var libraryId: String = "",
     private val deviceId: String = "camusic",
+    /**
+     * The device name Jellyfin shows. Every CAMusic install used to be "Android",
+     * the Linux panel included — and followers that match on the name (Hue Ghost's
+     * older name-based sources) could not tell the phone from the panel.
+     */
+    private val deviceName: String = DEVICE,
     private val http: OkHttpClient = shared,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
@@ -146,7 +152,7 @@ class JellyfinClient(
      * `Bearer` is the most common way to get a 401 from a server that is working.
      */
     private fun authHeader(): String = buildString {
-        append("MediaBrowser Client=\"$CLIENT\", Device=\"$DEVICE\", DeviceId=\"$deviceId\", Version=\"$VERSION\"")
+        append("MediaBrowser Client=\"$CLIENT\", Device=\"$deviceName\", DeviceId=\"$deviceId\", Version=\"$VERSION\"")
         if (token.isNotBlank()) append(", Token=\"$token\"")
     }
 
