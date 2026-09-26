@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,7 +38,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.engabd.sendpin.linux.ui.PaneAmbience
+import com.engabd.sendpin.ui.design.LocalAccent
+import com.engabd.sendpin.ui.design.LocalPalette
+import com.engabd.sendpin.ui.design.a
+import com.engabd.sendpin.ui.design.rememberAlbumPalette
+import com.engabd.sendpin.ui.design.rememberAccent
 import com.engabd.sendpin.ui.theme.AppFont
+import com.engabd.sendpin.ui.theme.Hairline
 import com.engabd.sendpin.ui.theme.Glass
 import com.engabd.sendpin.ui.theme.Ink
 import com.engabd.sendpin.ui.theme.TextMuted
@@ -77,29 +85,56 @@ private const val PLAYER_WEIGHT_WIDE = 0.42f
 @Composable
 fun PanelShell(model: PanelModel, layoutMode: LayoutMode) {
     var tab by remember { mutableStateOf(PanelTab.LIBRARY) }
+    // Hoisted above both layouts and the tab switch: the library keeps its page and
+    // its loaded shelves while the Queue or Lights tab is showing.
+    val libraryState = remember { LibraryState() }
 
     Box(Modifier.fillMaxSize().background(Ink)) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             when (layoutMode) {
-                LayoutMode.LANDSCAPE -> Row(Modifier.fillMaxSize()) {
-                    PlayerPane(Modifier.weight(PLAYER_WEIGHT_WIDE).fillMaxHeight(), model)
-                    Box(Modifier.fillMaxHeight().width(1.dp).background(Glass))
-                    Column(Modifier.weight(1f - PLAYER_WEIGHT_WIDE).fillMaxHeight()) {
-                        TabStrip(Modifier.fillMaxWidth(), model = model, selected = tab, on = { tab = it })
-                        Box(Modifier.fillMaxSize()) {
-                            when (tab) {
-                                PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model)
-                                PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
-                                PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
-                                PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
-                            }
-                        }
-                    }
-                }
+                LayoutMode.LANDSCAPE -> LandscapeShell(model, tab, { tab = it }, libraryState)
                 // Portrait is the overlay shell: the now-playing cover IS the screen,
                 // swiped down to reveal tabs + mini bar + bottom nav (PortraitShell
                 // owns its tab state — the shared `tab` above is the landscape strip's).
-                LayoutMode.PORTRAIT -> PortraitShell(model)
+                LayoutMode.PORTRAIT -> PortraitShell(model, libraryState = libraryState)
+            }
+        }
+    }
+}
+
+/**
+ * Landscape: the player left, tab strip + panel right, one album ambience behind both
+ * — the same palette the portrait shell provides, so both layouts take the record's
+ * colours.
+ */
+@Composable
+private fun LandscapeShell(
+    model: PanelModel,
+    tab: PanelTab,
+    onTab: (PanelTab) -> Unit,
+    libraryState: LibraryState,
+) {
+    val state by model.state.collectAsState()
+    val queue by model.queue.collectAsState()
+    val art = queue.getOrNull(state?.index?.takeIf { it >= 0 } ?: 0)?.artUrl
+    val palette = rememberAlbumPalette(art)
+    CompositionLocalProvider(LocalPalette provides palette, LocalAccent provides palette.accent) {
+        Box(Modifier.fillMaxSize()) {
+            PaneAmbience(art, palette)
+            Row(Modifier.fillMaxSize()) {
+                PlayerPane(Modifier.weight(PLAYER_WEIGHT_WIDE).fillMaxHeight(), model)
+                Box(Modifier.fillMaxHeight().width(1.dp).background(Hairline))
+                Column(Modifier.weight(1f - PLAYER_WEIGHT_WIDE).fillMaxHeight()) {
+                    TabStrip(Modifier.fillMaxWidth(), model = model, selected = tab, on = onTab)
+                    Box(Modifier.fillMaxSize()) {
+                        when (tab) {
+                            PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model, libraryState)
+                            PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
+                            PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
+                            PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
+                        }
+                    }
+                }
             }
         }
     }
@@ -114,6 +149,7 @@ private fun TabStrip(
     on: (PanelTab) -> Unit,
 ) {
     val status by model.statusLine.collectAsState()
+    val accent = rememberAccent()
     Row(
         modifier.padding(start = 12.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -127,7 +163,7 @@ private fun TabStrip(
                     // category chips; the old 9dp padding only reached ~36dp.
                     .heightIn(min = PanelMetrics.ChipMinHeight)
                     .clip(RoundedCornerShape(100.dp))
-                    .background(if (active) Glass else Color.Transparent)
+                    .background(if (active) accent.a(0.18f) else Color.Transparent)
                     .clickable { on(t) }
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -141,7 +177,7 @@ private fun TabStrip(
                         PanelTab.SETTINGS -> Icons.Default.Settings
                     },
                     contentDescription = t.label,
-                    tint = if (active) TextPrimary else TextMuted,
+                    tint = if (active) accent else TextMuted,
                     modifier = Modifier.size(22.dp),
                 )
                 Text(

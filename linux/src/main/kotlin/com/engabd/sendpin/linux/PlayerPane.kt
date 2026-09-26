@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -36,7 +35,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import com.engabd.sendpin.ui.design.MeltBackdrop
 import com.engabd.sendpin.ui.design.glassSurface
 import com.engabd.sendpin.ui.theme.AppFont
 import com.engabd.sendpin.ui.theme.Glass
@@ -61,12 +59,11 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
     val posMs = state?.positionMs ?: 0L
     val durMs = state?.durationMs ?: track?.durationMs ?: 0L
     val playing = state?.playing ?: false
-    var scrub by remember { mutableStateOf<Float?>(null) }
 
     Box(modifier) {
-        // The album wash — recorded as the backdrop so the glass surfaces below
-        // sample it; see the forked Backdrop.kt.
-        MeltBackdrop(url = queue.getOrNull(index)?.artUrl)
+        // No wash of its own: PanelShell draws one ambience behind both panes, so
+        // there is a single backdrop for every glass surface to sample (two
+        // MeltBackdrops would fight over the one recorded layer).
     // `modifier` carries the `weight()` PanelShell handed down — a RowScope/ColumnScope
     // parent-data modifier that only means something on the direct child of that Row/
     // Column, which is this outer Box. Applying it again here silently did nothing
@@ -125,17 +122,19 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        // What MPD is decoding, and how it is levelling it — the cover's pair.
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            com.engabd.sendpin.ui.design.MpdQualityBadge(track = track, outputFormat = state?.outputFormat)
+            LoudnessChip(model)
+        }
 
-        // Seek bar — scrub locally, commit on release (the poll reconciles it).
-        Slider(
-            value = scrub ?: if (durMs > 0) (posMs.toFloat() / durMs).coerceIn(0f, 1f) else 0f,
-            onValueChange = { scrub = it },
-            onValueChangeFinished = {
-                scrub?.let { f -> scope.launch { model.seekTo((f * durMs).toLong()) } }
-                scrub = null
-            },
-            enabled = durMs > 0,
-            modifier = Modifier.fillMaxWidth(),
+        // Seek — the cover's wavy bar in the album's accent; scrub commits on release
+        // and the poll reconciles (the bar latches the target until MPD catches up).
+        com.engabd.sendpin.ui.design.WaveSeekBar(
+            value = if (durMs > 0) (posMs.toFloat() / durMs).coerceIn(0f, 1f) else 0f,
+            onChange = { },
+            playing = playing,
+            onCommit = { f -> scope.launch { model.seekTo((f * durMs).toLong()) } },
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatMs(posMs), color = TextMuted, fontSize = PanelMetrics.Meta, fontFamily = AppFont)
@@ -181,15 +180,24 @@ private fun TransportButton(
     big: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val accent = com.engabd.sendpin.ui.design.rememberAccent()
     Box(
         Modifier
             .padding(horizontal = 12.dp)
-            .size(if (big) 64.dp else 48.dp)
-            .glassSurface(RoundedCornerShape(100.dp), Glass, border = Hairline)
+            .size(if (big) 76.dp else 56.dp)
+            .then(
+                // The play circle carries the album accent, as on the portrait cover.
+                if (big) Modifier.clip(RoundedCornerShape(100.dp)).background(accent)
+                else Modifier.glassSurface(RoundedCornerShape(100.dp), Glass, border = Hairline)
+            )
             .clickable { onClick() },
         contentAlignment = androidx.compose.ui.Alignment.Center,
     ) {
-        Icon(icon, label, tint = TextPrimary, modifier = Modifier.size(if (big) 30.dp else 24.dp))
+        Icon(
+            icon, label,
+            tint = if (big) com.engabd.sendpin.ui.theme.Ink else TextPrimary,
+            modifier = Modifier.size(if (big) 38.dp else 28.dp),
+        )
     }
 }
 

@@ -1,8 +1,10 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,7 +12,6 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Pause
@@ -48,9 +50,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,25 +64,28 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import com.engabd.sendpin.ui.design.ChameleonBloom
+import com.engabd.sendpin.linux.ui.ArtImage
+import com.engabd.sendpin.linux.ui.PaneAmbience
+import com.engabd.sendpin.linux.ui.PanelBloom
+import com.engabd.sendpin.linux.ui.PanelShapes
 import com.engabd.sendpin.ui.design.LocalAccent
 import com.engabd.sendpin.ui.design.LocalPalette
 import com.engabd.sendpin.ui.design.MeltBackdrop
 import com.engabd.sendpin.ui.design.MpdQualityBadge
 import com.engabd.sendpin.ui.design.WaveSeekBar
+import com.engabd.sendpin.ui.design.a
 import com.engabd.sendpin.ui.design.glassSurface
 import com.engabd.sendpin.ui.design.rememberAlbumPalette
 import com.engabd.sendpin.ui.design.rememberAccent
 import com.engabd.sendpin.ui.theme.AppFont
-import com.engabd.sendpin.ui.theme.Glass
 import com.engabd.sendpin.ui.theme.Hairline
-import com.engabd.sendpin.ui.theme.HairlineSoft
 import com.engabd.sendpin.ui.theme.Ink
-import com.engabd.sendpin.ui.theme.Ink2
+import com.engabd.sendpin.ui.theme.MonoFont
 import com.engabd.sendpin.ui.theme.TextFaint
 import com.engabd.sendpin.ui.theme.TextMuted
 import com.engabd.sendpin.ui.theme.TextPrimary
 import com.engabd.sendpin.ui.theme.TextSecondary
+import com.engabd.sendpin.ui.theme.inkOn
 import kotlin.math.roundToInt
 
 /**
@@ -127,14 +134,22 @@ internal fun expandRequested(upTravelPx: Float, thresholdPx: Float): Boolean =
  * dropped mid-slide.
  *
  * The whole screen lives inside the album's palette (CompositionLocalProvider):
- * the cover's wash and blooms, the wave bar, the transport, the mini bar and
- * the nav all take their accent from the record — one colour source, so the
- * room adopts the album. The base layer stays composed underneath at all
- * times, so the collapse is a reveal, not a load, and tab selection survives
- * every expand/collapse.
+ * the cover's wash and blooms, the tabs' ambience behind them, the wave bar,
+ * the transport, the mini bar and the nav all take their colour from the
+ * record — one colour source, so the room adopts the album. The base layer
+ * stays composed underneath at all times, so the collapse is a reveal, not a
+ * load, and tab selection survives every expand/collapse.
+ *
+ * [initialTab] and [initiallyExpanded] exist for the preview renderer, which
+ * draws each tab without a finger to swipe the cover away.
  */
 @Composable
-fun PortraitShell(model: PanelModel) {
+fun PortraitShell(
+    model: PanelModel,
+    initialTab: PanelTab = PanelTab.LIBRARY,
+    initiallyExpanded: Boolean = true,
+    libraryState: LibraryState = remember { LibraryState() },
+) {
     val state by model.state.collectAsState()
     val queue by model.queue.collectAsState()
     val index = state?.index?.takeIf { it >= 0 } ?: 0
@@ -146,14 +161,26 @@ fun PortraitShell(model: PanelModel) {
         LocalPalette provides palette,
         LocalAccent provides palette.accent,
     ) {
-        PortraitShellBody(model)
+        PortraitShellBody(model, initialTab, initiallyExpanded, libraryState)
     }
 }
 
 @Composable
-private fun PortraitShellBody(model: PanelModel) {
-    var tab by remember { mutableStateOf(PanelTab.LIBRARY) }
-    var expanded by remember { mutableStateOf(true) }
+private fun PortraitShellBody(
+    model: PanelModel,
+    initialTab: PanelTab,
+    initiallyExpanded: Boolean,
+    libraryState: LibraryState,
+) {
+    var tab by remember { mutableStateOf(initialTab) }
+    var expanded by remember { mutableStateOf(initiallyExpanded) }
+    // True while the cover sits fully over the tabs — the tabs' ambience (a second
+    // full-screen blur) is then skipped, so the panel pays for one backdrop, not two.
+    var coverOpaque by remember { mutableStateOf(false) }
+
+    val state by model.state.collectAsState()
+    val queue by model.queue.collectAsState()
+    val art = queue.getOrNull(state?.index?.takeIf { it >= 0 } ?: 0)?.artUrl
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink)) {
         val screenHpx = with(LocalDensity.current) { maxHeight.toPx() }
@@ -164,17 +191,20 @@ private fun PortraitShellBody(model: PanelModel) {
         val collapsePx = screenHpx
         val queueRevealPx = screenHpx * QUEUE_REVEAL_FRACTION
 
-        Column(Modifier.fillMaxSize().background(Ink)) {
-            Box(Modifier.fillMaxWidth().weight(1f)) {
-                when (tab) {
-                    PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model)
-                    PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
-                    PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
-                    PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
+        Box(Modifier.fillMaxSize()) {
+            if (!(expanded && coverOpaque)) PaneAmbience(art, LocalPalette.current)
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    when (tab) {
+                        PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model, libraryState)
+                        PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
+                        PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
+                        PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
+                    }
                 }
+                MiniPlayerBar(model = model, onExpand = { expanded = true })
+                PortraitNavBar(model = model, selected = tab, on = { tab = it })
             }
-            MiniPlayerBar(model = model, onExpand = { expanded = true })
-            PortraitNavBar(model = model, selected = tab, on = { tab = it })
         }
 
         if (expanded) {
@@ -182,10 +212,12 @@ private fun PortraitShellBody(model: PanelModel) {
                 model = model,
                 collapsePx = collapsePx,
                 queueRevealPx = queueRevealPx,
-                onCollapse = { expanded = false },
+                onOpaque = { coverOpaque = it },
+                onCollapse = { expanded = false; coverOpaque = false },
                 onSwipeUp = {
                     tab = PanelTab.QUEUE
                     expanded = false
+                    coverOpaque = false
                 },
             )
         }
@@ -203,6 +235,7 @@ private fun NowPlayingCover(
     model: PanelModel,
     collapsePx: Float,
     queueRevealPx: Float,
+    onOpaque: (Boolean) -> Unit,
     onCollapse: () -> Unit,
     onSwipeUp: () -> Unit,
 ) {
@@ -223,8 +256,12 @@ private fun NowPlayingCover(
     var dragPx by remember { mutableFloatStateOf(collapsePx) }
     var upTravel by remember { mutableFloatStateOf(0f) }
     var settling by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
     val settle = remember { Animatable(collapsePx) }
     val offsetPx = if (settling) settle.value else dragPx
+
+    val opaque = !settling && !dragging && dragPx == 0f
+    LaunchedEffect(opaque) { onOpaque(opaque) }
 
     suspend fun settleTo(target: Float) {
         settle.snapTo(dragPx)
@@ -251,8 +288,9 @@ private fun NowPlayingCover(
             .offset { IntOffset(0, offsetPx.roundToInt()) }
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
-                    onDragStart = { dragPx = 0f; upTravel = 0f },
+                    onDragStart = { dragPx = 0f; upTravel = 0f; dragging = true },
                     onDragEnd = {
+                        dragging = false
                         scope.launch {
                             when {
                                 collapseCommitted(dragPx, collapsePx) -> {
@@ -264,7 +302,7 @@ private fun NowPlayingCover(
                             }
                         }
                     },
-                    onDragCancel = { scope.launch { settleTo(0f) } },
+                    onDragCancel = { dragging = false; scope.launch { settleTo(0f) } },
                     onVerticalDrag = { change, dragAmount ->
                         change.consume()
                         settling = false
@@ -280,10 +318,10 @@ private fun NowPlayingCover(
     ) {
         // The album wash behind everything — the backdrop the glass surfaces sample.
         MeltBackdrop(url = track?.artUrl)
-        // The bloom over it: the album's colours bleeding across the canvas, drawn
+        // The bloom over it: the album's colours spread over the whole panel, drawn
         // after the wash and before the content (Box children paint in declaration
         // order), so text keeps its contrast however bright the album is.
-        CoverBloom()
+        PanelBloom(LocalPalette.current, 1f)
 
         Column(
             Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 20.dp),
@@ -292,9 +330,9 @@ private fun NowPlayingCover(
         ) {
             // Drag handle — decor, but it says "this surface moves".
             Box(
-                Modifier.size(width = 36.dp, height = 4.dp)
+                Modifier.size(width = 44.dp, height = 5.dp)
                     .clip(RoundedCornerShape(100.dp))
-                    .background(Hairline)
+                    .background(inkOn(0.3f))
             )
 
             // Top gap — generous headroom above the cover: the art floats well clear of
@@ -305,37 +343,35 @@ private fun NowPlayingCover(
             // the screen, packing directly under the handle. The band does NOT take
             // the column's leftover height (weighting it letterboxed the art and
             // left half a cover-height of air beneath it); the square's height IS
-            // its width. The gap under the art is then explicit — see the spacer
-            // below — set to half what the letterbox used to leave.
+            // its width. Rounded and lifted on a glow in the album's own accent, so
+            // the record sits *on* its colour rather than cut out of it.
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val art = track?.artUrl
-                if (art != null) {
-                    coil3.compose.AsyncImage(
-                        model = art,
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-                    )
-                } else {
-                    Text(
-                        "♪",
-                        color = TextMuted,
-                        fontSize = 64.sp,
-                        fontFamily = AppFont,
-                    )
-                }
+                val shape = RoundedCornerShape(28.dp)
+                ArtImage(
+                    url = track?.artUrl,
+                    name = track?.title ?: "",
+                    shape = shape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .shadow(48.dp, shape, ambientColor = accent, spotColor = accent),
+                )
             }
 
             // Half the letterbox gap the old weighted band left: the art → badge space is
-            // now an explicit 20dp (the column's 14dp spacing + 6dp here, ~48px on
-            // this panel) instead of ~95px of letterbox air. Everything below
-            // sits proportionally closer to the cover.
+            // an explicit 20dp here on top of the column's 14dp spacing.
             Spacer(Modifier.fillMaxWidth().height(20.dp))
 
-            // The quality badge — what MPD is actually decoding, in the album's accent:
-            // codec + rate/depth (+ live bitrate), lit up on hi-res. Sits between
-            // the cover and the title, exactly where the phone's overlay puts it.
-            MpdQualityBadge(track = track, outputFormat = state?.outputFormat)
+            // The signal chain in one line: what MPD is decoding (the quality badge, in
+            // the album's accent) and how it is being levelled (the loudness chip —
+            // one tap steps Off → Track → Album, the same three modes as Settings).
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MpdQualityBadge(track = track, outputFormat = state?.outputFormat)
+                LoudnessChip(model)
+            }
 
             // Title block — centred, the overlay's own arrangement. Title and artist
             // are sized to *fill* the space under the cover, not just sit in it.
@@ -355,10 +391,11 @@ private fun NowPlayingCover(
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    track?.artist ?: "Queue an album from the library",
+                    listOfNotNull(track?.artist, track?.album).joinToString("  ·  ")
+                        .ifEmpty { "Queue an album from the library" },
                     color = TextSecondary,
                     fontFamily = AppFont,
-                    fontSize = 17.sp,
+                    fontSize = 18.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -375,61 +412,87 @@ private fun NowPlayingCover(
                 playing = playing,
                 onCommit = { f -> scope.launch { model.seekTo((f * durMs).toLong()) } },
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatMs(posMs), color = TextMuted, fontSize = 11.sp, fontFamily = AppFont)
-                Text(formatMs(durMs), color = TextMuted, fontSize = 11.sp, fontFamily = AppFont)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatMs(posMs), color = TextMuted, fontSize = 14.sp, fontFamily = MonoFont)
+                Text("−" + formatMs((durMs - posMs).coerceAtLeast(0)), color = TextMuted, fontSize = 14.sp, fontFamily = MonoFont)
             }
             // Transport — the accent carries the play circle, as on the phone. Skips are
-                        // pushed well out from the play circle so a hurried thumb cannot hit
-                        // the wrong one (≈42dp between visible edges); the row's horizontal
-                        // padding is halved to cancel the column's spacing so the spread is
-                        // exactly what is chosen here.
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CoverButton(Icons.Default.SkipPrevious, "Previous", 64.dp, 32.dp) {
-                                scope.launch { model.previous() }
-                            }
-                            Box(
-                                Modifier
-                                    .padding(horizontal = 28.dp)
-                                    .size(92.dp)
-                                    .clip(CircleShape)
-                                    .background(accent)
-                                    .clickable { scope.launch { model.togglePause() } },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    if (playing) "Pause" else "Play",
-                                    tint = Ink,
-                                    modifier = Modifier.size(46.dp),
-                                )
-                            }
-                            CoverButton(Icons.Default.SkipNext, "Next", 64.dp, 32.dp) {
-                                scope.launch { model.next() }
-                            }
-                        }
+            // pushed well out from the play circle so a hurried thumb cannot hit
+            // the wrong one (≈42dp between visible edges); the row's horizontal
+            // padding is halved to cancel the column's spacing so the spread is
+            // exactly what is chosen here.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CoverButton(Icons.Default.SkipPrevious, "Previous", 64.dp, 32.dp) {
+                    scope.launch { model.previous() }
+                }
+                Box(
+                    Modifier
+                        .padding(horizontal = 28.dp)
+                        .size(92.dp)
+                        .shadow(28.dp, CircleShape, ambientColor = accent, spotColor = accent)
+                        .clip(CircleShape)
+                        .background(accent)
+                        .clickable { scope.launch { model.togglePause() } },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (playing) "Pause" else "Play",
+                        tint = Ink,
+                        modifier = Modifier.size(46.dp),
+                    )
+                }
+                CoverButton(Icons.Default.SkipNext, "Next", 64.dp, 32.dp) {
+                    scope.launch { model.next() }
+                }
+            }
             // The column's leftover height pools here, under the transport —
             // invisible on the OLED black, and it keeps the packed upper stack
             // from over-flowing the screen on a small cover band.
             Spacer(Modifier.fillMaxWidth().weight(1f))
-            // (No footer readout: the quality badge above the title already says
-            // what MPD is decoding — a second line saying it again was noise.)
         }
     }
 }
 
 /**
- * The album's colours bleeding across the player canvas — the bloom layer.
- * Sibling of the cover's column, drawn after the wash and before the content
- * (Box children paint in declaration order), so text keeps its contrast.
+ * The cover's loudness toggle — the phone's player-options ReplayGain block, folded
+ * into one chip beside the quality badge. Shows the mode MPD reports (falling back to
+ * the saved one); a tap steps to the next and hands it to MPD.
  */
 @Composable
-private fun BoxScope.CoverBloom() {
-    ChameleonBloom(LocalPalette.current, 1f)
+internal fun LoudnessChip(model: PanelModel) {
+    val saved by model.settings.replayGainMode.collectAsState(initial = "album")
+    val mpd by model.replayGain.collectAsState()
+    val scope = rememberCoroutineScope()
+    val accent = rememberAccent()
+    val mode = shownLoudness(saved, mpd)
+    val on = mode != LoudnessMode.OFF.key
+    val shape = RoundedCornerShape(11.dp)
+    val tint by animateColorAsState(if (on) accent else TextMuted, tween(220), label = "loudTint")
+    Row(
+        Modifier
+            .clip(shape)
+            .background(if (on) tint.a(0.12f) else inkOn(0.06f))
+            .border(1.dp, tint.a(if (on) 0.35f else 0.25f), shape)
+            .clickable { scope.launch { model.setReplayGain(nextLoudness(mode)) } }
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.AutoMirrored.Filled.VolumeUp, "Loudness", tint = tint, modifier = Modifier.size(18.dp))
+        Text(
+            if (on) "${loudnessLabel(mode)} gain" else "Gain off",
+            color = if (on) inkOn(0.92f) else TextMuted,
+            fontFamily = MonoFont,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            maxLines = 1,
+        )
+    }
 }
 
 /** A glass transport target at least 48dp — a panel is touched, not clicked. */
@@ -445,7 +508,7 @@ private fun CoverButton(
         Modifier
             .padding(horizontal = 14.dp)
             .size(boxSize)
-            .glassSurface(RoundedCornerShape(100.dp), Glass, border = Hairline)
+            .glassSurface(RoundedCornerShape(100.dp), inkOn(0.08f), border = Hairline)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -454,9 +517,10 @@ private fun CoverButton(
 }
 
 /**
- * The collapsed player's bar: thumbnail, title / artist / playing-on line, and
- * inline transport — the accent carries the play circle. Tap or swipe up
- * expands the cover, the inverse of the swipe that got you here.
+ * The collapsed player: a glass bar washed from the left in the album's accent, with
+ * the cover, title / artist / playing-on line, inline transport, and the track's
+ * progress as a hairline along its foot. Tap or swipe up expands the cover, the
+ * inverse of the swipe that got you here.
  */
 @Composable
 private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
@@ -468,19 +532,20 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
     val index = state?.index?.takeIf { it >= 0 } ?: 0
     val track = queue.getOrNull(index)
     val playing = state?.playing ?: false
+    val durMs = state?.durationMs?.takeIf { it > 0 } ?: track?.durationMs ?: 0L
+    val progress = if (durMs > 0) ((state?.positionMs ?: 0L).toFloat() / durMs).coerceIn(0f, 1f) else 0f
 
     // Enough upward travel to mean it, in pixels — the Android bar's threshold.
     val expandPx = with(LocalDensity.current) { 24.dp.toPx() }
     var upTravel by remember { mutableFloatStateOf(0f) }
+    val shape = RoundedCornerShape(22.dp)
 
-    Row(
+    Box(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .height(PanelMetrics.MiniBarHeight)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Ink2)
-            .border(1.dp, HairlineSoft, RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .height(PanelMetrics.MiniBarHeight + 12.dp)
+            .glassSurface(shape, inkOn(0.07f), border = Hairline)
             .clickable { onExpand() }
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
@@ -491,132 +556,138 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                     change.consume()
                     upTravel = (upTravel + dragAmount).coerceAtMost(0f)
                 }
-            }
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            },
     ) {
-        // Thumbnail.
+        Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(accent.a(0.22f), Color.Transparent))))
+        // Progress along the foot of the bar.
         Box(
-            Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(Glass),
-            contentAlignment = Alignment.Center,
+            Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(3.dp)
+                .background(accent)
+        )
+        Row(
+            Modifier.fillMaxSize().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            val art = track?.artUrl
-            if (art != null) {
-                coil3.compose.AsyncImage(
-                    model = art,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Text("♪", color = TextMuted, fontSize = 20.sp, fontFamily = AppFont)
-            }
-        }
+            ArtImage(
+                url = track?.artUrl,
+                name = track?.title ?: "",
+                shape = PanelShapes.Thumb,
+                modifier = Modifier.size(60.dp),
+            )
 
-        // Title + artist + where it is playing.
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(
-                track?.title ?: "Nothing playing",
-                color = if (track == null) TextSecondary else TextPrimary,
-                fontFamily = AppFont,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = PanelMetrics.RowTitle,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                track?.artist ?: "Queue an album from the library",
-                color = TextMuted,
-                fontFamily = AppFont,
-                fontSize = PanelMetrics.RowSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            val device = state?.outputDeviceName
-            if (!device.isNullOrBlank()) {
+            // Title + artist + where it is playing.
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
-                    "($device)",
-                    color = TextFaint,
+                    track?.title ?: "Nothing playing",
+                    color = if (track == null) TextSecondary else TextPrimary,
                     fontFamily = AppFont,
-                    fontSize = PanelMetrics.Meta,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = PanelMetrics.RowTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-        }
-
-        // Transport — nothing to drive when nothing is queued; the bar then stays
-        // a plain tap-to-open target instead of offering dead buttons.
-        if (track != null) {
-            Box(
-                Modifier.size(48.dp).clip(CircleShape).clickable {
-                    scope.launch { model.previous() }
-                },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.SkipPrevious, "Previous", tint = TextSecondary, modifier = Modifier.size(30.dp))
-            }
-            Box(
-                Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(accent)
-                    .clickable { scope.launch { model.togglePause() } },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    if (playing) "Pause" else "Play",
-                    tint = Ink,
-                    modifier = Modifier.size(28.dp),
+                Text(
+                    track?.artist ?: "Queue an album from the library",
+                    color = TextMuted,
+                    fontFamily = AppFont,
+                    fontSize = PanelMetrics.RowSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                val device = state?.outputDeviceName
+                if (!device.isNullOrBlank()) {
+                    Text(
+                        "on $device",
+                        color = accent.a(0.9f),
+                        fontFamily = AppFont,
+                        fontSize = PanelMetrics.Meta,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            Box(
-                Modifier.size(48.dp).clip(CircleShape).clickable {
-                    scope.launch { model.next() }
-                },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.SkipNext, "Next", tint = TextSecondary, modifier = Modifier.size(30.dp))
+
+            // Transport — nothing to drive when nothing is queued; the bar then stays
+            // a plain tap-to-open target instead of offering dead buttons.
+            if (track != null) {
+                Box(
+                    Modifier.size(56.dp).clip(CircleShape).clickable {
+                        scope.launch { model.previous() }
+                    },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.SkipPrevious, "Previous", tint = TextSecondary, modifier = Modifier.size(32.dp))
+                }
+                Box(
+                    Modifier
+                        .size(60.dp)
+                        .clip(CircleShape)
+                        .background(accent)
+                        .clickable { scope.launch { model.togglePause() } },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (playing) "Pause" else "Play",
+                        tint = Ink,
+                        modifier = Modifier.size(30.dp),
+                    )
+                }
+                Box(
+                    Modifier.size(56.dp).clip(CircleShape).clickable {
+                        scope.launch { model.next() }
+                    },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.SkipNext, "Next", tint = TextSecondary, modifier = Modifier.size(32.dp))
+                }
             }
         }
     }
 }
 
 /**
- * The bottom nav: the four tabs as icon-over-label targets, and the connection
- * status line beneath — the landscape tab strip carries the status at its far
- * edge; portrait's strip is gone, so the line lives here instead. The active
- * tab takes the album accent.
+ * The bottom nav: a floating glass dock, the four tabs as icon-over-label targets
+ * with the active one lifted onto an accent pill, and the connection status line
+ * beneath — the landscape tab strip carries the status at its far edge; portrait's
+ * strip is gone, so the line lives here instead.
  */
 @Composable
 private fun PortraitNavBar(model: PanelModel, selected: PanelTab, on: (PanelTab) -> Unit) {
     val status by model.statusLine.collectAsState()
     val accent = rememberAccent()
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp)) {
         Row(
-            Modifier.fillMaxWidth().height(PanelMetrics.NavHeight),
+            Modifier
+                .fillMaxWidth()
+                .height(PanelMetrics.NavHeight + 8.dp)
+                .glassSurface(RoundedCornerShape(26.dp), inkOn(0.07f), border = Hairline)
+                .padding(6.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             PanelTab.entries.forEach { t ->
                 val active = t == selected
+                val bg by animateColorAsState(if (active) accent.a(0.18f) else Color.Transparent, tween(220), label = "navBg")
                 val tint = if (active) accent else TextMuted
                 Column(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(bg)
                         .clickable { on(t) },
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                    verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
                 ) {
-                    Icon(iconFor(t), t.label, tint = tint, modifier = Modifier.size(26.dp))
+                    Icon(iconFor(t), t.label, tint = tint, modifier = Modifier.size(28.dp))
                     Text(
                         t.label,
-                        color = tint,
+                        color = if (active) TextPrimary else TextMuted,
                         fontFamily = AppFont,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                        fontSize = PanelMetrics.NavLabel,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 14.sp,
                         maxLines = 1,
                     )
                 }
@@ -631,7 +702,7 @@ private fun PortraitNavBar(model: PanelModel, selected: PanelTab, on: (PanelTab)
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 3.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
             )
         }
     }

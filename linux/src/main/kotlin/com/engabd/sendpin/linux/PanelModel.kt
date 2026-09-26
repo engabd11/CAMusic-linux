@@ -4,6 +4,7 @@ import com.engabd.sendpin.audio.LocalTrack
 import com.engabd.sendpin.audio.RemoteState
 import com.engabd.sendpin.jellyfin.JellyfinClient
 import com.engabd.sendpin.library.JellyfinSource
+import com.engabd.sendpin.library.MusicSource
 import com.engabd.sendpin.ma.MaItem
 import com.engabd.sendpin.mpd.MpdClient
 import com.engabd.sendpin.mpd.MpdRemote
@@ -45,10 +46,22 @@ class PanelModel(val settings: LinuxSettings) {
     // Clients as StateFlows so panes recompose the moment they come up — a plain
     // var set after first composition is invisible to Compose (the Library tab
     // sat on "Configure Jellyfin" with a healthy client because of exactly that).
-    private val _source = MutableStateFlow<JellyfinSource?>(null)
-    val source: StateFlow<JellyfinSource?> = _source
-    private val _hueGhost = MutableStateFlow<HueGhostClient?>(null)
+    //
+    // Typed as the MusicSource interface rather than JellyfinSource: the panes only ever
+    // browse through the interface, and `internal` lets the preview renderer
+    // (src/test/.../preview) hand them a fake library without a Jellyfin server.
+    internal val _source = MutableStateFlow<MusicSource?>(null)
+    val source: StateFlow<MusicSource?> = _source
+    internal val _hueGhost = MutableStateFlow<HueGhostClient?>(null)
     val hueGhost: StateFlow<HueGhostClient?> = _hueGhost
+
+    /**
+     * MPD's own `replay_gain_mode`, read back from `replay_gain_status` — not the saved
+     * preference. MPD is a shared daemon: the Android app's MPD session sets the same
+     * mode through its own `MpdRemote.setReplayGain`, so what the panel last asked for
+     * and what MPD is applying can differ. Null until MPD has answered.
+     */
+    val replayGain = MutableStateFlow<String?>(null)
 
     private var mpd: MpdClient? = null
     private var remote: MpdRemote? = null
@@ -115,6 +128,7 @@ class PanelModel(val settings: LinuxSettings) {
             mpd = client
             remote = MpdRemote(client)
             runCatching { client.setReplayGainMode(rg) }
+            replayGain.value = client.replayGainMode()
             statusLine.value = if (err == null) "MPD connected — $mpdAddr" else "MPD: ${err.message}"
 
             if (jfUrlV.isNotBlank() && jfTokenV.isNotBlank()) {
@@ -140,6 +154,7 @@ class PanelModel(val settings: LinuxSettings) {
             // The 1 Hz poll: transport truth, then the reporter, then the queue
             // itself. This is the loop whose ~3 s tick HueGhost's 15 s music
             // timeout depends on.
+            var tick = 0
             while (scope.isActive) {
                 val s = remote?.poll()
                 state.value = s
@@ -147,6 +162,10 @@ class PanelModel(val settings: LinuxSettings) {
                     runCatching { reporter.onState(s, System.currentTimeMillis()) }
                 }
                 reconcileQueueFromMpd()
+                // Another client can change MPD's loudness under us (see [replayGain]);
+                // one extra command every 10 s keeps the readback honest without
+                // doubling the 1 Hz poll's traffic.
+                if (++tick % 10 == 0) mpd?.replayGainMode()?.let { replayGain.value = it }
                 delay(1_000)
             }
         }
@@ -191,6 +210,18 @@ class PanelModel(val settings: LinuxSettings) {
     suspend fun next() = remote?.next() ?: Unit
     suspend fun previous() = remote?.previous() ?: Unit
     suspend fun seekTo(ms: Long) = remote?.seekTo(ms) ?: Unit
+
+    /**
+     * Level loudness: persist the choice, hand it to MPD (which applies the files'
+     * ReplayGain tags as it decodes), then read back what MPD actually took. `off`,
+     * `track` or `album` — the Android app's three modes, spelled as MPD spells them.
+     */
+    suspend fun setReplayGain(mode: String) {
+        settings.setReplayGainMode(mode)
+        val client = mpd ?: return
+        runCatching { client.setReplayGainMode(mode) }
+        replayGain.value = client.replayGainMode() ?: replayGain.value
+    }
 
     // ── Queue editing (QueuePane) ──────────────────────────────────────────
     // Same fire-and-let-the-poll-reconcile shape as the transport calls above:
