@@ -142,3 +142,31 @@ tasks.register<JavaExec>("runSmoke") {
     classpath = sourceSets["main"].runtimeClasspath
     environment(System.getenv())
 }
+// Offscreen previews of every pane, drawn with a fake library — the one way to *see* the
+// panel's UI from a machine that is not the NUC (`run` needs the Linux Skiko natives this
+// module pins). `src/test/.../preview/RenderPreviews.kt` renders each screen at the
+// panel's 800x1280 portrait size into linux/build/previews/*.png:
+//   ./gradlew :linux:renderPreviews
+// Off Linux, the host's Skiko runtime is added to the *test* classpath only, so the
+// packaged app is unchanged. Keep the version in step with desktop-jvm-linux-x64's Skiko.
+val skikoHostRuntime: String? = run {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = if (System.getProperty("os.arch").contains("aarch64")) "arm64" else "x64"
+    when {
+        os.contains("windows") -> "windows-$arch"
+        os.contains("mac") -> "macos-$arch"
+        else -> null
+    }
+}
+dependencies {
+    skikoHostRuntime?.let { testRuntimeOnly("org.jetbrains.skiko:skiko-awt-runtime-$it:0.150.1") }
+}
+
+tasks.register<JavaExec>("renderPreviews") {
+    group = "verification"
+    description = "Render every pane with fake data to linux/build/previews/*.png."
+    dependsOn("testClasses")
+    mainClass.set("com.engabd.sendpin.linux.preview.RenderPreviewsKt")
+    classpath = sourceSets["test"].runtimeClasspath
+    args(layout.buildDirectory.dir("previews").get().asFile.absolutePath)
+}
