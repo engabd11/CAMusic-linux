@@ -88,8 +88,8 @@ class PanelModel(val settings: LinuxSettings) {
     private val reporter = SessionReporter(
         jellyfin = object : SessionReporter.Reporter {
             private val jf: JellyfinClient? get() = jellyfin
-            override suspend fun start(id: String) {
-                jf?.reportPlayback(id, completed = false)
+            override suspend fun start(id: String, positionMs: Long) {
+                jf?.reportPlayback(id, completed = false, positionMs = positionMs)
             }
 
             override suspend fun progress(id: String, positionMs: Long, paused: Boolean) {
@@ -138,6 +138,9 @@ class PanelModel(val settings: LinuxSettings) {
                     userId = jfUserV,
                     libraryId = jfLibV,
                     deviceId = settings.deviceId.first(),
+                    // the same name JellyfinPaths' header gives it: the server keeps
+                    // whichever came last, so the two must agree
+                    deviceName = "Linux",
                 )
                 // The browse pane reads through this — without it the Library tab
                 // sits on "Configure Jellyfin" even with a healthy client.

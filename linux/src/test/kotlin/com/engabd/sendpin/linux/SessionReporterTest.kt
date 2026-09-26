@@ -20,11 +20,13 @@ class SessionReporterTest {
 
     private class FakeJellyfin : SessionReporter.Reporter {
         val starts = mutableListOf<String>()
+        val startPositions = mutableListOf<Long>()
         val progress = mutableListOf<Triple<String, Long, Boolean>>()
         val stops = mutableListOf<Pair<String, Long>>()
 
-        override suspend fun start(id: String) {
+        override suspend fun start(id: String, positionMs: Long) {
             starts.add(id)
+            startPositions.add(positionMs)
         }
 
         override suspend fun progress(id: String, positionMs: Long, paused: Boolean) {
@@ -138,5 +140,22 @@ class SessionReporterTest {
         assertEquals(0, jf.stops.size, "a Wi-Fi blip must not end the Jellyfin session")
         rep.onState(state(pos = 2_000), nowMs = 31_000)
         assertEquals(listOf(Triple("jf-0", 2_000L, false)), jf.progress)
+    }
+
+    @Test
+    fun `start carries the real position, not zero`() = runTest {
+        val jf = FakeJellyfin()
+        val rep = SessionReporter(jf, trackIdAt = { "jf-$it" })
+        rep.onState(state(pos = 95_000), nowMs = 0) // joined a track MPD was already playing
+        assertEquals(listOf(95_000L), jf.startPositions)
+    }
+
+    @Test
+    fun `a track found paused is reported paused at once`() = runTest {
+        val jf = FakeJellyfin()
+        val rep = SessionReporter(jf, trackIdAt = { "jf-$it" })
+        rep.onState(state(playing = false, pos = 40_000), nowMs = 0)
+        assertEquals(listOf("jf-0"), jf.starts)
+        assertEquals(listOf(Triple("jf-0", 40_000L, true)), jf.progress)
     }
 }

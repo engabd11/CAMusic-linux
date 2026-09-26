@@ -23,7 +23,7 @@ class SessionReporter(
 
     /** The three Jellyfin reports, named for what they mean rather than what they POST. */
     interface Reporter {
-        suspend fun start(id: String)
+        suspend fun start(id: String, positionMs: Long)
         suspend fun progress(id: String, positionMs: Long, paused: Boolean)
         suspend fun stop(id: String, positionMs: Long)
     }
@@ -60,7 +60,14 @@ class SessionReporter(
             lastStateAtMs = nowMs
             lastProgressAtMs = nowMs
             lastReportedPaused = paused
-            jellyfin.start(id)
+            // Where it really is: a queue MPD was already playing, or a panel that
+            // restarted mid-track, does not start at 0 — reported as 0, a follower
+            // (Hue Ghost) jumps to the start and back on the next tick.
+            jellyfin.start(id, state.positionMs)
+            // Jellyfin's start report always says "playing". Found paused (MPD paused
+            // before the panel came up), say so at once, or Hue Ghost lights up for a
+            // song nobody is playing until the next tick.
+            if (paused) jellyfin.progress(id, state.positionMs, true)
             return
         }
 
