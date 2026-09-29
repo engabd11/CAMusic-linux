@@ -67,7 +67,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.engabd.sendpin.linux.PanelModel
-import com.engabd.sendpin.ui.design.AlbumPalette
 import com.engabd.sendpin.ui.theme.AppFont
 import com.engabd.sendpin.ui.theme.DisplayFonts
 import kotlinx.coroutines.delay
@@ -233,7 +232,7 @@ private fun Gallery(
     // when a slide changes mid-hold, and the hold would silently never land.
     val currentId by rememberUpdatedState(layers.lastOrNull { !it.leaving }?.slide?.item?.itemId)
     val holdToPlay by rememberUpdatedState(extras.holdToPlay)
-    val currentAccent = layers.lastOrNull { !it.leaving }?.slide?.palette?.accent
+    val currentInk = layers.lastOrNull { !it.leaving }?.slide?.look?.ink
     val driftOffset = rememberDrift(extras.drift)
 
     BoxWithConstraints(
@@ -261,7 +260,7 @@ private fun Gallery(
                 else -> Alignment.TopEnd to Alignment.End
             }
             Clock(
-                accent = if (extras.albumText) currentAccent else null,
+                accent = if (extras.albumText) currentInk else null,
                 // the clock grows less than the words: large type must not reach the print
                 scale = minOf(extras.textScale, 1.1f),
                 align = across,
@@ -362,7 +361,7 @@ private fun GallerySlide(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = maxWidth > maxHeight
         if (bleed) {
-            ColourBleed(slide.palette, age)
+            ColourBleed(slide.look.bleed, age)
         } else {
             CoverWash(slide, age)
         }
@@ -439,13 +438,14 @@ private fun CoverWash(slide: Slide, age: () -> Float) {
 
 /**
  * The album-colours backdrop: the record's palette bleeding across near-black, the way
- * CAMusic's player lights its canvas (ChameleonBloom) — four soft blooms, the strongest
- * swatches in opposite corners so the whole screen is tinted, each wandering on its own
- * slow orbit. Drawn in one Canvas that reads the slide's age only while drawing, so the
- * motion never recomposes.
+ * CAMusic's player lights its canvas (ChameleonBloom) — four soft blooms, each wandering
+ * on its own slow orbit. Painted from [AlbumInk.bleed], every album colour *except* the
+ * words' ink, so the words never sit on their own colour. Drawn in one Canvas that reads
+ * the slide's age only while drawing, so the motion never recomposes.
  */
 @Composable
-private fun ColourBleed(palette: AlbumPalette, age: () -> Float) {
+private fun ColourBleed(bleed: List<Color>, age: () -> Float) {
+    fun tone(i: Int) = bleed[i % bleed.size]
     Canvas(Modifier.fillMaxSize()) {
         drawRect(Color(0xFF07070A))
         val t = age() / 1_000f
@@ -466,10 +466,10 @@ private fun ColourBleed(palette: AlbumPalette, age: () -> Float) {
                 center = c,
             )
         }
-        bloom(palette.swatch(0), w * (0.12f + 0.06f * sin(t / 17f)), h * (0.18f + 0.05f * sin(t / 13f)), reach * 0.78f, 0.62f)
-        bloom(palette.swatch(1), w * (0.88f + 0.05f * sin(t / 19f)), h * (0.28f + 0.06f * sin(t / 11f)), reach * 0.62f, 0.46f)
-        bloom(palette.swatch(2), w * (0.25f + 0.06f * sin(t / 23f)), h * (0.92f + 0.04f * sin(t / 15f)), reach * 0.66f, 0.40f)
-        bloom(palette.accent, w * (0.80f + 0.05f * sin(t / 14f)), h * (0.82f + 0.05f * sin(t / 21f)), reach * 0.70f, 0.44f)
+        bloom(tone(0), w * (0.12f + 0.06f * sin(t / 17f)), h * (0.18f + 0.05f * sin(t / 13f)), reach * 0.78f, 0.62f)
+        bloom(tone(1), w * (0.88f + 0.05f * sin(t / 19f)), h * (0.28f + 0.06f * sin(t / 11f)), reach * 0.62f, 0.46f)
+        bloom(tone(2), w * (0.25f + 0.06f * sin(t / 23f)), h * (0.92f + 0.04f * sin(t / 15f)), reach * 0.66f, 0.40f)
+        bloom(tone(3), w * (0.80f + 0.05f * sin(t / 14f)), h * (0.82f + 0.05f * sin(t / 21f)), reach * 0.70f, 0.44f)
         // a quiet vignette, so the edges settle and the words keep their contrast
         drawRect(
             Brush.radialGradient(
@@ -590,14 +590,14 @@ private fun TextBlock(
     titleMaxSp: Float,
 ) {
     val horizontal = if (align == TextAlign.Center) Alignment.CenterHorizontally else Alignment.Start
-    val ink = Inks(if (extras.albumText) slide.palette.accent else null)
+    val ink = Inks(if (extras.albumText) slide.look.ink else null)
     val k = extras.textScale
     Column(horizontalAlignment = horizontal, modifier = Modifier.fillMaxWidth()) {
         Box(
             Modifier
                 .size(44.dp, 2.dp)
                 .graphicsLayer { alpha = text.alpha(500f) }
-                .background(slide.palette.accent),
+                .background(slide.look.ink),
         )
         Spacer(Modifier.height(22.dp))
         val artistMotion = Modifier.graphicsLayer {
@@ -750,21 +750,21 @@ private fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlig
 // ── Clock and burn-in drift ─────────────────────────────────────────────
 
 /**
- * The words' colours. White by default; with album-coloured text, the record's accent —
- * already lifted by the palette to read on a dark ground, which is how the player uses
- * it — with the large strokes (title, time) a touch paler so they stay luminous.
+ * The words' colours. White by default; with album-coloured text, the record's ink —
+ * the album colour that stands apart from the bleed, already lifted to clear the
+ * contrast bar (see [albumInk]) — kept close to itself so the colour survives.
  */
 private class Inks(accent: Color?) {
-    val title = accent?.let { lerp(it, Color.White, 0.22f) } ?: Color.White
+    val title = accent?.let { lerp(it, Color.White, 0.1f) } ?: Color.White
     val artist = accent ?: Color.White.copy(alpha = 0.74f)
-    val details = accent?.copy(alpha = 0.78f) ?: Color.White.copy(alpha = 0.56f)
-    val time = accent?.let { lerp(it, Color.White, 0.3f) } ?: Color.White.copy(alpha = 0.9f)
-    val meta = accent?.copy(alpha = 0.8f) ?: Color.White.copy(alpha = 0.6f)
+    val details = accent?.copy(alpha = 0.85f) ?: Color.White.copy(alpha = 0.56f)
+    val time = accent?.let { lerp(it, Color.White, 0.15f) } ?: Color.White.copy(alpha = 0.9f)
+    val meta = accent?.copy(alpha = 0.85f) ?: Color.White.copy(alpha = 0.6f)
 }
 
 /**
  * Time in the light Garamond, the date in spaced capitals; ticks on the minute. With
- * album-coloured text it takes the showing record's accent, easing across as slides change.
+ * album-coloured text it takes the showing record's ink, easing across as slides change.
  */
 @Composable
 private fun Clock(accent: Color?, scale: Float, align: Alignment.Horizontal, modifier: Modifier) {

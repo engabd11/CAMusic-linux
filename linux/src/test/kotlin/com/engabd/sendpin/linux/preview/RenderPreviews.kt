@@ -167,7 +167,7 @@ fun main(args: Array<String>) {
     screensaver("20-screensaver-fullbleed-landscape", "kenburns", 1280, 800)
     screensaver("21-screensaver-fullbleed-portrait", "kenburns", 800, 1280, clock = false)
     screensaver("22-screensaver-colours-landscape", "bloom", 1280, 800, albumText = true)
-    screensaver("23-screensaver-colours-portrait", "bloom", 800, 1280, textSize = "large", clockAt = "centre")
+    screensaver("23-screensaver-colours-portrait", "bloom", 800, 1280, albumText = true, textSize = "large", clockAt = "centre")
     screensaver("24-screensaver-gallery-albumtext", "gallery", 800, 1280, albumText = true, textSize = "small", clockAt = "left")
     screensaver("25-screensaver-large-landscape", "gallery", 1280, 800, textSize = "large", clockAt = "left")
 
