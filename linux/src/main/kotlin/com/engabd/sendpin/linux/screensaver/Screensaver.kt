@@ -48,6 +48,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -231,7 +232,7 @@ private fun Gallery(
     // when a slide changes mid-hold, and the hold would silently never land.
     val currentId by rememberUpdatedState(layers.lastOrNull { !it.leaving }?.slide?.item?.itemId)
     val holdToPlay by rememberUpdatedState(extras.holdToPlay)
-    val currentInk = layers.lastOrNull { !it.leaving }?.slide?.look?.ink
+    val currentLook = layers.lastOrNull { !it.leaving }?.slide?.look
     val driftOffset = rememberDrift(extras.drift)
 
     BoxWithConstraints(
@@ -259,7 +260,8 @@ private fun Gallery(
                 else -> Alignment.TopEnd to Alignment.End
             }
             Clock(
-                accent = if (extras.albumText) currentInk else null,
+                accent = if (extras.albumText) currentLook?.ink else null,
+                neutral = currentLook?.neutral == true,
                 // the clock grows less than the words: large type must not reach the print
                 scale = minOf(extras.textScale, 1.1f),
                 align = across,
@@ -590,7 +592,7 @@ private fun TextBlock(
     titleMaxSp: Float,
 ) {
     val horizontal = if (align == TextAlign.Center) Alignment.CenterHorizontally else Alignment.Start
-    val ink = Inks(if (extras.albumText) slide.look.ink else null)
+    val ink = Inks(if (extras.albumText) slide.look.ink else null, slide.look.neutral)
     val k = extras.textScale
     Column(horizontalAlignment = horizontal, modifier = Modifier.fillMaxWidth()) {
         Box(
@@ -750,17 +752,19 @@ private fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlig
 // ── Clock and burn-in drift ─────────────────────────────────────────────
 
 /**
- * The words' colours. White by default; with album-coloured text, every word is the
- * record's ink exactly as the palette extracted it — no tint toward white, no
- * transparency, both of which shift it off the sleeve's colour. Legibility is the
- * bleed's job (see [albumInk]); the hierarchy is carried by size and spacing.
+ * The words' colours. White by default. With album-coloured text, a true colour is used
+ * exactly as the palette extracted it — no tint toward white, no transparency, both of
+ * which shift it off the sleeve's colour; legibility is the bleed's job (see [albumInk]).
+ * A grey or white ink ([AlbumInk.neutral]) is set the earlier way instead: the large
+ * strokes nudged toward white so they stay luminous, the small lines softened.
  */
-private class Inks(ink: Color?) {
-    val title = ink ?: Color.White
+private class Inks(ink: Color?, neutral: Boolean = false) {
+    private val soft = ink != null && neutral
+    val title = if (soft) lerp(ink!!, Color.White, 0.1f) else ink ?: Color.White
     val artist = ink ?: Color.White.copy(alpha = 0.74f)
-    val details = ink ?: Color.White.copy(alpha = 0.56f)
-    val time = ink ?: Color.White.copy(alpha = 0.9f)
-    val meta = ink ?: Color.White.copy(alpha = 0.6f)
+    val details = if (soft) ink!!.copy(alpha = 0.85f) else ink ?: Color.White.copy(alpha = 0.56f)
+    val time = if (soft) lerp(ink!!, Color.White, 0.15f) else ink ?: Color.White.copy(alpha = 0.9f)
+    val meta = if (soft) ink!!.copy(alpha = 0.85f) else ink ?: Color.White.copy(alpha = 0.6f)
 }
 
 /**
@@ -768,9 +772,9 @@ private class Inks(ink: Color?) {
  * album-coloured text it takes the showing record's ink, easing across as slides change.
  */
 @Composable
-private fun Clock(accent: Color?, scale: Float, align: Alignment.Horizontal, modifier: Modifier) {
+private fun Clock(accent: Color?, neutral: Boolean, scale: Float, align: Alignment.Horizontal, modifier: Modifier) {
     val eased by animateColorAsState(accent ?: Color.White, tween(FADE_MS), label = "clockInk")
-    val ink = Inks(if (accent != null) eased else null)
+    val ink = Inks(if (accent != null) eased else null, neutral)
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     LaunchedEffect(Unit) {
         while (true) {

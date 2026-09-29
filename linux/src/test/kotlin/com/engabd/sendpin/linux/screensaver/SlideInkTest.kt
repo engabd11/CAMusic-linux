@@ -74,4 +74,28 @@ class SlideInkTest {
         val look = albumInk(AlbumPalette(accent = a, swatches = listOf(a, b)))
         assertEquals(a, look.ink)
     }
+
+    @Test
+    fun `a grey ink is lifted to read, over a full-strength bleed`() {
+        val grey = Color(0xFF6A6A6E) // too dim to read as it is
+        val look = albumInk(AlbumPalette(accent = grey, swatches = listOf(grey)))
+        assertTrue(look.neutral)
+        assertEquals(1f, look.bleedLevel)
+        assertTrue(look.ink != grey, "lifted, as before")
+        assertTrue(readsOn(look) >= MIN_CONTRAST)
+    }
+
+    @Test
+    fun `a white ink is kept and marked neutral`() {
+        val white = Color(0xFFF2F0EC)
+        val look = albumInk(AlbumPalette(accent = white, swatches = listOf(white, Color(0xFF304080))))
+        assertTrue(look.neutral)
+        assertEquals(white, look.ink) // already reads: nothing to lift
+    }
+
+    @Test
+    fun `a true colour is never marked neutral`() {
+        val look = albumInk(AlbumPalette(accent = orange, swatches = listOf(orange, blue1)))
+        assertFalse(look.neutral)
+    }
 }
