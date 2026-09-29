@@ -1,12 +1,14 @@
 package com.engabd.sendpin.linux.screensaver
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,9 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -63,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.engabd.sendpin.linux.PanelModel
+import com.engabd.sendpin.ui.design.AlbumPalette
 import com.engabd.sendpin.ui.theme.AppFont
 import com.engabd.sendpin.ui.theme.DisplayFonts
 import kotlinx.coroutines.delay
@@ -86,7 +91,20 @@ private data class Extras(
     val details: Boolean,
     val holdToPlay: Boolean,
     val drift: Boolean,
+    /** Set the words in the record's own colours, the way the player does. */
+    val albumText: Boolean,
+    /** Multiplies every size in the words and clock — Settings' Small / Regular / Large. */
+    val textScale: Float = 1f,
+    /** `left` | `centre` | `right`. */
+    val clockPosition: String = "right",
 )
+
+/** Settings' text size key → the scale the words are set at. */
+internal fun textScaleOf(key: String): Float = when (key) {
+    "small" -> 0.82f
+    "large" -> 1.22f
+    else -> 1f
+}
 
 /**
  * The gallery: when nothing is playing and nobody has touched the panel for the set delay,
@@ -108,6 +126,9 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
     val details by settings.screensaverDetails.collectAsState(initial = true)
     val holdToPlay by settings.screensaverHoldToPlay.collectAsState(initial = true)
     val drift by settings.screensaverDrift.collectAsState(initial = true)
+    val albumText by settings.screensaverAlbumText.collectAsState(initial = false)
+    val textSize by settings.screensaverTextSize.collectAsState(initial = "regular")
+    val clockPosition by settings.screensaverClockPosition.collectAsState(initial = "right")
     val remote by model.state.collectAsState()
     val source by model.source.collectAsState()
     val forced by model.screensaverNow.collectAsState()
@@ -167,7 +188,7 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
             feed = feed,
             style = style,
             slideMs = slideS.coerceAtLeast(5) * 1_000,
-            extras = Extras(clock, details, holdToPlay, drift),
+            extras = Extras(clock, details, holdToPlay, drift, albumText, textScaleOf(textSize), clockPosition),
             onTap = ::dismiss,
             onHold = { id ->
                 scope.launch { model.playAlbumById(id) }
@@ -212,9 +233,10 @@ private fun Gallery(
     // when a slide changes mid-hold, and the hold would silently never land.
     val currentId by rememberUpdatedState(layers.lastOrNull { !it.leaving }?.slide?.item?.itemId)
     val holdToPlay by rememberUpdatedState(extras.holdToPlay)
+    val currentAccent = layers.lastOrNull { !it.leaving }?.slide?.palette?.accent
     val driftOffset = rememberDrift(extras.drift)
 
-    Box(
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
@@ -232,10 +254,21 @@ private fun Gallery(
             SlideLayer(layer.slide, layer.leaving, style, slideMs, extras, driftOffset)
         }
         if (extras.clock) {
+            val gutter = maxWidth * 0.08f
+            val (corner, across) = when (extras.clockPosition) {
+                "left" -> Alignment.TopStart to Alignment.Start
+                "centre" -> Alignment.TopCenter to Alignment.CenterHorizontally
+                else -> Alignment.TopEnd to Alignment.End
+            }
             Clock(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 40.dp, end = 48.dp)
+                accent = if (extras.albumText) currentAccent else null,
+                // the clock grows less than the words: large type must not reach the print
+                scale = minOf(extras.textScale, 1.1f),
+                align = across,
+                modifier = Modifier
+                    .align(corner)
+                    // the print's own gutter, so a clock on the left lines up with it
+                    .padding(top = 40.dp, start = gutter, end = gutter)
                     .offset { driftOffset() },
             )
         }
@@ -276,7 +309,7 @@ private fun SlideLayer(
         if (style == "kenburns") {
             KenBurnsSlide(slide, slideMs, { age.value }, text, extras, drift)
         } else {
-            GallerySlide(slide, slideMs, { age.value }, text, extras, drift)
+            GallerySlide(slide, slideMs, { age.value }, text, extras, drift, bleed = style == "bloom")
         }
         if (extras.holdToPlay) {
             Text(
@@ -323,42 +356,28 @@ private fun GallerySlide(
     text: TextMotion,
     extras: Extras,
     drift: () -> IntOffset,
+    /** The album-colours style: the palette's own bleed behind the print, not the blurred cover. */
+    bleed: Boolean = false,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = maxWidth > maxHeight
-        // The wash: the pre-blurred cover, far larger than the screen, turning and
-        // breathing too slowly to notice — only to feel.
-        Image(
-            slide.wash,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize().graphicsLayer {
-                val t = age() / 1_000f
-                val s = 1.45f + 0.06f * sin(t / 7f)
-                scaleX = s
-                scaleY = s
-                rotationZ = 5f * sin(t / 19f)
-                translationX = size.width * 0.03f * sin(t / 11f)
-                translationY = size.height * 0.03f * sin(t / 13f)
-                alpha = 0.9f
-            },
-        )
-        // Darken toward the edges, and warm the middle with the record's own accent.
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.radialGradient(
-                    0f to slide.palette.accent.copy(alpha = 0.10f),
-                    0.55f to Color.Black.copy(alpha = 0.45f),
-                    1f to Color.Black.copy(alpha = 0.82f),
-                ),
-            ),
-        )
+        if (bleed) {
+            ColourBleed(slide.palette, age)
+        } else {
+            CoverWash(slide, age)
+        }
 
         val w = maxWidth
         if (landscape) {
-            val print = minOf(maxHeight * 0.64f, w * 0.40f)
+            // A clock on the left or in the middle sits above the print, not beside it:
+            // the print shrinks and drops so the clock (up to 1.1x, ~150 dp) clears it.
+            val clockOverPrint = extras.clock && extras.clockPosition != "right"
+            val print = if (clockOverPrint) minOf(maxHeight - 340.dp, w * 0.40f)
+            else minOf(maxHeight * 0.64f, w * 0.40f)
             Row(
-                Modifier.fillMaxSize().padding(horizontal = w * 0.08f),
+                Modifier.fillMaxSize()
+                    .padding(horizontal = w * 0.08f)
+                    .padding(top = if (clockOverPrint) 110.dp else 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Print(slide, print, slideMs, age)
@@ -382,6 +401,84 @@ private fun GallerySlide(
                 Spacer(Modifier.weight(1f))
             }
         }
+    }
+}
+
+/**
+ * The gallery wall's backdrop: the pre-blurred cover, far larger than the screen, turning
+ * and breathing too slowly to notice — only to feel — darkened toward the edges and
+ * warmed in the middle with the record's accent.
+ */
+@Composable
+private fun CoverWash(slide: Slide, age: () -> Float) {
+    Image(
+        slide.wash,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize().graphicsLayer {
+            val t = age() / 1_000f
+            val s = 1.45f + 0.06f * sin(t / 7f)
+            scaleX = s
+            scaleY = s
+            rotationZ = 5f * sin(t / 19f)
+            translationX = size.width * 0.03f * sin(t / 11f)
+            translationY = size.height * 0.03f * sin(t / 13f)
+            alpha = 0.9f
+        },
+    )
+    Box(
+        Modifier.fillMaxSize().background(
+            Brush.radialGradient(
+                0f to slide.palette.accent.copy(alpha = 0.10f),
+                0.55f to Color.Black.copy(alpha = 0.45f),
+                1f to Color.Black.copy(alpha = 0.82f),
+            ),
+        ),
+    )
+}
+
+/**
+ * The album-colours backdrop: the record's palette bleeding across near-black, the way
+ * CAMusic's player lights its canvas (ChameleonBloom) — four soft blooms, the strongest
+ * swatches in opposite corners so the whole screen is tinted, each wandering on its own
+ * slow orbit. Drawn in one Canvas that reads the slide's age only while drawing, so the
+ * motion never recomposes.
+ */
+@Composable
+private fun ColourBleed(palette: AlbumPalette, age: () -> Float) {
+    Canvas(Modifier.fillMaxSize()) {
+        drawRect(Color(0xFF07070A))
+        val t = age() / 1_000f
+        val w = size.width
+        val h = size.height
+        val reach = maxOf(w, h)
+        fun bloom(color: Color, x: Float, y: Float, radius: Float, alpha: Float) {
+            val c = Offset(x, y)
+            drawCircle(
+                Brush.radialGradient(
+                    0f to color.copy(alpha = alpha),
+                    0.55f to color.copy(alpha = alpha * 0.35f),
+                    1f to Color.Transparent,
+                    center = c,
+                    radius = radius,
+                ),
+                radius = radius,
+                center = c,
+            )
+        }
+        bloom(palette.swatch(0), w * (0.12f + 0.06f * sin(t / 17f)), h * (0.18f + 0.05f * sin(t / 13f)), reach * 0.78f, 0.62f)
+        bloom(palette.swatch(1), w * (0.88f + 0.05f * sin(t / 19f)), h * (0.28f + 0.06f * sin(t / 11f)), reach * 0.62f, 0.46f)
+        bloom(palette.swatch(2), w * (0.25f + 0.06f * sin(t / 23f)), h * (0.92f + 0.04f * sin(t / 15f)), reach * 0.66f, 0.40f)
+        bloom(palette.accent, w * (0.80f + 0.05f * sin(t / 14f)), h * (0.82f + 0.05f * sin(t / 21f)), reach * 0.70f, 0.44f)
+        // a quiet vignette, so the edges settle and the words keep their contrast
+        drawRect(
+            Brush.radialGradient(
+                0.45f to Color.Transparent,
+                1f to Color.Black.copy(alpha = 0.55f),
+                center = Offset(w / 2f, h / 2f),
+                radius = reach * 0.75f,
+            ),
+        )
     }
 }
 
@@ -493,6 +590,8 @@ private fun TextBlock(
     titleMaxSp: Float,
 ) {
     val horizontal = if (align == TextAlign.Center) Alignment.CenterHorizontally else Alignment.Start
+    val ink = Inks(if (extras.albumText) slide.palette.accent else null)
+    val k = extras.textScale
     Column(horizontalAlignment = horizontal, modifier = Modifier.fillMaxWidth()) {
         Box(
             Modifier
@@ -511,15 +610,15 @@ private fun TextBlock(
                 contentDescription = slide.item.subtitle,
                 contentScale = ContentScale.Fit,
                 alignment = if (align == TextAlign.Center) Alignment.Center else Alignment.CenterStart,
-                modifier = artistMotion.height(64.dp).widthIn(max = 340.dp),
+                modifier = artistMotion.height(64.dp * k).widthIn(max = 340.dp * k),
             )
         } else if (!slide.item.subtitle.isNullOrBlank()) {
             Text(
                 slide.item.subtitle!!.uppercase(),
-                color = Color.White.copy(alpha = 0.74f),
+                color = ink.artist,
                 fontFamily = AppFont,
                 fontWeight = FontWeight.Medium,
-                fontSize = 15.sp,
+                fontSize = (15f * k).sp,
                 letterSpacing = 0.32.em,
                 textAlign = align,
                 maxLines = 1,
@@ -545,19 +644,19 @@ private fun TextBlock(
                 contentDescription = slide.item.name,
                 contentScale = ContentScale.Fit,
                 alignment = if (align == TextAlign.Center) Alignment.Center else Alignment.CenterStart,
-                modifier = titleMotion.fillMaxWidth(0.9f).heightIn(max = 170.dp),
+                modifier = titleMotion.fillMaxWidth(0.9f).heightIn(max = 170.dp * k),
             )
         } else {
-            FittedTitle(slide.item.name, slide.face, titleMaxSp, align, titleMotion)
+            FittedTitle(slide.item.name, slide.face, titleMaxSp * k, align, ink.title, titleMotion)
         }
         val line = detailsLine(slide.year, slide.genres)
         if (extras.details && line.isNotEmpty()) {
             Spacer(Modifier.height(22.dp))
             Text(
                 line,
-                color = Color.White.copy(alpha = 0.56f),
+                color = ink.details,
                 fontFamily = AppFont,
-                fontSize = 14.sp,
+                fontSize = (14f * k).sp,
                 letterSpacing = 0.22.em,
                 textAlign = align,
                 maxLines = 1,
@@ -606,7 +705,7 @@ private fun specOf(face: Face): FaceSpec = when (face) {
  * shrinking step by step, and only at the floor allowing a third line.
  */
 @Composable
-private fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlign, modifier: Modifier) {
+private fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlign, color: Color, modifier: Modifier) {
     val spec = specOf(face)
     val shown = if (spec.caps) title.uppercase() else title
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -639,7 +738,7 @@ private fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlig
         Text(
             shown,
             style = style,
-            color = Color.White,
+            color = color,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
             // full width, so the alignment has a line to align within
@@ -650,9 +749,27 @@ private fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlig
 
 // ── Clock and burn-in drift ─────────────────────────────────────────────
 
-/** Time in the light Garamond, the date in spaced capitals; ticks on the minute. */
+/**
+ * The words' colours. White by default; with album-coloured text, the record's accent —
+ * already lifted by the palette to read on a dark ground, which is how the player uses
+ * it — with the large strokes (title, time) a touch paler so they stay luminous.
+ */
+private class Inks(accent: Color?) {
+    val title = accent?.let { lerp(it, Color.White, 0.22f) } ?: Color.White
+    val artist = accent ?: Color.White.copy(alpha = 0.74f)
+    val details = accent?.copy(alpha = 0.78f) ?: Color.White.copy(alpha = 0.56f)
+    val time = accent?.let { lerp(it, Color.White, 0.3f) } ?: Color.White.copy(alpha = 0.9f)
+    val meta = accent?.copy(alpha = 0.8f) ?: Color.White.copy(alpha = 0.6f)
+}
+
+/**
+ * Time in the light Garamond, the date in spaced capitals; ticks on the minute. With
+ * album-coloured text it takes the showing record's accent, easing across as slides change.
+ */
 @Composable
-private fun Clock(modifier: Modifier) {
+private fun Clock(accent: Color?, scale: Float, align: Alignment.Horizontal, modifier: Modifier) {
+    val eased by animateColorAsState(accent ?: Color.White, tween(FADE_MS), label = "clockInk")
+    val ink = Inks(if (accent != null) eased else null)
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -669,36 +786,36 @@ private fun Clock(modifier: Modifier) {
     val time = now.format(DateTimeFormatter.ofPattern(if (twelveHour) "h:mm" else "HH:mm"))
     val meridiem = if (twelveHour) now.format(DateTimeFormatter.ofPattern("a", Locale.getDefault())) else null
     val date = now.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault())).uppercase()
-    Column(horizontalAlignment = Alignment.End, modifier = modifier) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.End) {
+    Column(horizontalAlignment = align, modifier = modifier) {
+        Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 time,
-                color = Color.White.copy(alpha = 0.9f),
+                color = ink.time,
                 // Cormorant's default figures are old-style, where 1 reads as I and 4 and
                 // 7 drop below the line: lining for a clock, tabular so it doesn't twitch.
                 style = TextStyle(
                     fontFamily = DisplayFonts.CormorantGaramond,
-                    fontSize = 72.sp,
-                    lineHeight = 72.sp,
+                    fontSize = (72f * scale).sp,
+                    lineHeight = (72f * scale).sp,
                     fontFeatureSettings = "lnum, tnum",
                 ),
             )
             if (meridiem != null) {
                 Text(
                     meridiem.uppercase(),
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = ink.meta,
                     fontFamily = AppFont,
-                    fontSize = 13.sp,
+                    fontSize = (13f * scale).sp,
                     letterSpacing = 0.2.em,
-                    modifier = Modifier.padding(start = 8.dp, bottom = 14.dp),
+                    modifier = Modifier.padding(start = 8.dp, bottom = 14.dp * scale),
                 )
             }
         }
         Text(
             date,
-            color = Color.White.copy(alpha = 0.6f),
+            color = ink.meta,
             fontFamily = AppFont,
-            fontSize = 12.sp,
+            fontSize = (12f * scale).sp,
             letterSpacing = 0.28.em,
             modifier = Modifier.alpha(0.95f),
         )

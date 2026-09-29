@@ -143,11 +143,18 @@ fun main(args: Array<String>) {
 
     // The screensaver, forced on ("Preview now") with nothing playing. Long renders: the
     // feed loads over real HTTP, then the first slide dissolves in and its words enter.
-    fun screensaver(name: String, style: String, width: Int, height: Int, clock: Boolean = true) {
+    fun screensaver(
+        name: String, style: String, width: Int, height: Int,
+        clock: Boolean = true, albumText: Boolean = false,
+        textSize: String = "regular", clockAt: String = "right",
+    ) {
         val m = freshModel()
         runBlocking {
             m.settings.setScreensaverStyle(style)
             m.settings.setScreensaverClock(clock)
+            m.settings.setScreensaverAlbumText(albumText)
+            m.settings.setScreensaverTextSize(textSize)
+            m.settings.setScreensaverClockPosition(clockAt)
         }
         m.state.value = m.state.value?.copy(playing = false)
         m.screensaverNow.value = true
@@ -159,6 +166,10 @@ fun main(args: Array<String>) {
     screensaver("19-screensaver-gallery-portrait", "gallery", 800, 1280)
     screensaver("20-screensaver-fullbleed-landscape", "kenburns", 1280, 800)
     screensaver("21-screensaver-fullbleed-portrait", "kenburns", 800, 1280, clock = false)
+    screensaver("22-screensaver-colours-landscape", "bloom", 1280, 800, albumText = true)
+    screensaver("23-screensaver-colours-portrait", "bloom", 800, 1280, textSize = "large", clockAt = "centre")
+    screensaver("24-screensaver-gallery-albumtext", "gallery", 800, 1280, albumText = true, textSize = "small", clockAt = "left")
+    screensaver("25-screensaver-large-landscape", "gallery", 1280, 800, textSize = "large", clockAt = "left")
 
     server.stop()
     println("Previews written to ${out.absolutePath}")
