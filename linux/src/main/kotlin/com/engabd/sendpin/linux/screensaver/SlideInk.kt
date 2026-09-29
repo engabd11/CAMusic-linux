@@ -3,33 +3,37 @@ package com.engabd.sendpin.linux.screensaver
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.engabd.sendpin.ui.design.AlbumPalette
-import com.engabd.sendpin.ui.design.oklabToOklch
-import com.engabd.sendpin.ui.design.oklchToRgbInGamut
 import com.engabd.sendpin.ui.design.rgbToOklab
 import kotlin.math.sqrt
 
 /**
  * How one record colours its slide: [ink] for the words, [bleed] for the colours
- * behind them — split so the words always pop while staying the album's own.
+ * behind them, and [bleedLevel], how strongly the bleed may shine behind that ink.
  *
  * The rule is CAMusic's. Its play button reads against the album's bloom because the
- * palette keeps the lead colour brighter and more vivid than the companions that
- * light the room. So the words take the album colour that stands furthest from all
- * the others (the odd one out, in hue and chroma), lifted, hue kept, until it clears
- * [MIN_CONTRAST] against the bleed behind it. The bleed is painted from the rest,
- * never from the ink, so the words never sit on their own colour.
+ * palette keeps the lead colour apart from the companions that light the room. So the
+ * words take the album colour that stands furthest from all the others (the odd one
+ * out, in hue and chroma) — **exactly as the palette has it, never lightened**: a
+ * lifted tint is close to the sleeve's colour but visibly not it. The bleed is painted
+ * from the rest, never from the ink.
+ *
+ * Contrast is the background's job, not the words': where the bleed would crowd the
+ * ink, it is dimmed until the ink clears [MIN_CONTRAST] against it.
  */
-data class AlbumInk(val ink: Color, val bleed: List<Color>)
+data class AlbumInk(val ink: Color, val bleed: List<Color>, val bleedLevel: Float = 1f)
 
 /** The near-black the bleed is painted over. */
 internal val BLEED_GROUND = Color(0xFF07070A)
 
 /**
- * Roughly how much of the bleed's colour reaches any point behind the words — the
- * blooms' alphas where they overlap, minus the vignette. An estimate, deliberately on
- * the bright side, so the contrast check errs toward the words.
+ * Roughly how much of the bleed's colour reaches any point behind the words at full
+ * level — the blooms' alphas where they overlap, minus the vignette. An estimate,
+ * deliberately on the bright side, so the contrast check errs toward the words.
  */
 private const val BLEED_COVER = 0.5f
+
+/** The dimmest the bleed goes: below this it stops reading as the album's colours. */
+private const val MIN_BLEED_LEVEL = 0.35f
 
 /** WCAG's threshold for body text; display text this size has room to spare. */
 const val MIN_CONTRAST = 4.5f
@@ -37,17 +41,31 @@ const val MIN_CONTRAST = 4.5f
 fun albumInk(palette: AlbumPalette): AlbumInk {
     val swatches = palette.swatches.distinct().ifEmpty { listOf(palette.accent) }
     if (swatches.size == 1) {
-        // One colour only (a monochrome sleeve): it lights the room and, lifted, sets the words.
+        // One colour only (a monochrome sleeve): it lights the room and sets the words.
         val only = swatches[0]
-        return AlbumInk(readable(only, bleedBackground(swatches)), listOf(only))
+        return AlbumInk(only, listOf(only), levelFor(only, swatches))
     }
-    val chosen = swatches.withIndex().maxBy { (i, c) ->
+    // Only colours that can be read at all — against the bare ground — may set the
+    // words. The palette lifts its colours for a dark page, so this is nearly all of
+    // them; if none can, the most legible one does.
+    val legible = swatches.withIndex().filter { contrast(it.value, BLEED_GROUND) >= MIN_CONTRAST }
+        .ifEmpty { listOf(swatches.withIndex().maxBy { contrast(it.value, BLEED_GROUND) }) }
+    val chosen = legible.maxBy { (i, c) ->
         val rest = swatches.filterIndexed { j, _ -> j != i }
         // the lead (index 0) wins ties: it is the colour the cover is about
         separation(c, rest) + if (i == 0) 0.01f else 0f
     }.value
     val rest = swatches.filter { it != chosen }
-    return AlbumInk(readable(chosen, bleedBackground(rest)), rest)
+    return AlbumInk(chosen, rest, levelFor(chosen, rest))
+}
+
+/** The strongest bleed level, from full down to [MIN_BLEED_LEVEL], at which [ink] still reads. */
+private fun levelFor(ink: Color, bleed: List<Color>): Float {
+    var level = 1f
+    while (level > MIN_BLEED_LEVEL && contrast(ink, bleedBackground(bleed, level)) < MIN_CONTRAST) {
+        level -= 0.05f
+    }
+    return level.coerceAtLeast(MIN_BLEED_LEVEL)
 }
 
 /** How far [c] sits from the nearest of [others] in OKLab's hue–chroma plane. */
@@ -60,28 +78,13 @@ private fun separation(c: Color, others: List<Color>): Float {
 }
 
 /** The colour the words actually sit on: the ground with the bleed's average laid over it. */
-internal fun bleedBackground(bleed: List<Color>): Color {
+internal fun bleedBackground(bleed: List<Color>, level: Float = 1f): Color {
     val r = bleed.map { it.red }.average().toFloat()
     val g = bleed.map { it.green }.average().toFloat()
     val b = bleed.map { it.blue }.average().toFloat()
-    fun mix(ground: Float, over: Float) = ground + (over - ground) * BLEED_COVER
+    val cover = BLEED_COVER * level
+    fun mix(ground: Float, over: Float) = ground + (over - ground) * cover
     return Color(mix(BLEED_GROUND.red, r), mix(BLEED_GROUND.green, g), mix(BLEED_GROUND.blue, b))
-}
-
-/**
- * [c] made legible on [background]: its hue kept exactly, its chroma kept as far as the
- * gamut allows, its lightness raised step by step until the contrast holds.
- */
-internal fun readable(c: Color, background: Color): Color {
-    val lch = oklabToOklch(lab(c))
-    var l = lch[0]
-    var out = c
-    while (contrast(out, background) < MIN_CONTRAST && l < 0.98f) {
-        l = (l + 0.02f).coerceAtMost(0.98f)
-        val rgb = oklchToRgbInGamut(l, lch[1], lch[2])
-        out = Color(rgb[0].coerceIn(0f, 1f), rgb[1].coerceIn(0f, 1f), rgb[2].coerceIn(0f, 1f))
-    }
-    return out
 }
 
 /** WCAG contrast ratio between two opaque colours. */
