@@ -48,7 +48,6 @@ private fun panelSize(): Pair<Dp, Dp> {
 fun main() = application {
     val settings = remember { LinuxSettings(LinuxSettings.defaultPath()) }
     val model = remember { PanelModel(settings) }
-    val idle = remember { IdleGate() }
     // Clients built from settings; the 1 Hz poll loop starts here.
     LaunchedEffect(Unit) { model.start() }
 
@@ -64,6 +63,9 @@ fun main() = application {
     val fixed by settings.accentFixed.collectAsState(initial = 0xFF8AB4F8.toInt())
     val theme by settings.themeChoice.collectAsState(initial = "dark")
     val glassBlur by settings.glassBlur.collectAsState(initial = true)
+
+    // The screensaver's idle clock, fed by every touch and key below.
+    val idle = remember { IdleGate() }
 
     val (panelWidth, panelHeight) = remember { panelSize() }
     Window(
