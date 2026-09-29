@@ -161,6 +161,35 @@ class LinuxSettings(private val path: Path) {
     val reportToJellyfin: Flow<Boolean> = bool("report_to_jellyfin", true)
     suspend fun setReportToJellyfin(value: Boolean) = set("report_to_jellyfin", JsonPrimitive(value))
 
+    // ── Screensaver (the album-art gallery when idle and not playing) ────
+
+    val screensaverEnabled: Flow<Boolean> = bool("screensaver_enabled", true)
+    /** Minutes untouched, with nothing playing, before the gallery begins. */
+    val screensaverDelayMin: Flow<Int> = int("screensaver_delay_min", 10)
+    /** `gallery` (the cover as a lit print) | `kenburns` (full-bleed, slow pan and zoom). */
+    val screensaverStyle: Flow<String> = str("screensaver_style", "gallery")
+    /** Seconds each album holds the screen. */
+    val screensaverSlideS: Flow<Int> = int("screensaver_slide_s", 20)
+    /** `all` | `favourites` | `recent` — which albums rotate. */
+    val screensaverAlbums: Flow<String> = str("screensaver_albums", "all")
+    val screensaverClock: Flow<Boolean> = bool("screensaver_clock", true)
+    /** The year · genre line under the artist. */
+    val screensaverDetails: Flow<Boolean> = bool("screensaver_details", true)
+    /** Hold a slide to play that album (a tap only ever wakes the panel). */
+    val screensaverHoldToPlay: Flow<Boolean> = bool("screensaver_hold_to_play", true)
+    /** Drift the text and clock a few pixels over time — the panel never turns off. */
+    val screensaverDrift: Flow<Boolean> = bool("screensaver_drift", true)
+
+    suspend fun setScreensaverEnabled(value: Boolean) = set("screensaver_enabled", JsonPrimitive(value))
+    suspend fun setScreensaverDelayMin(value: Int) = set("screensaver_delay_min", JsonPrimitive(value))
+    suspend fun setScreensaverStyle(value: String) = set("screensaver_style", JsonPrimitive(value))
+    suspend fun setScreensaverSlideS(value: Int) = set("screensaver_slide_s", JsonPrimitive(value))
+    suspend fun setScreensaverAlbums(value: String) = set("screensaver_albums", JsonPrimitive(value))
+    suspend fun setScreensaverClock(value: Boolean) = set("screensaver_clock", JsonPrimitive(value))
+    suspend fun setScreensaverDetails(value: Boolean) = set("screensaver_details", JsonPrimitive(value))
+    suspend fun setScreensaverHoldToPlay(value: Boolean) = set("screensaver_hold_to_play", JsonPrimitive(value))
+    suspend fun setScreensaverDrift(value: Boolean) = set("screensaver_drift", JsonPrimitive(value))
+
     companion object {
         /** The default settings path on this machine. */
         fun defaultPath(): Path {

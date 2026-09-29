@@ -483,35 +483,8 @@ fun rememberAlbumPalette(url: String?): AlbumPalette {
                     if (!resp.isSuccessful) null else resp.body?.bytes()
                 } ?: return@withContext null
                 val img = Image.makeFromEncoded(bytes)
-                if (img.width <= 0 || img.height <= 0) return@withContext null
                 try {
-                    Surface.makeRaster(
-                        ImageInfo.makeN32(SAMPLE, SAMPLE, ColorAlphaType.UNPREMUL)
-                    ).use { surface ->
-                        surface.canvas.drawImageRect(
-                            img,
-                            org.jetbrains.skia.Rect.makeXYWH(0f, 0f, img.width.toFloat(), img.height.toFloat()),
-                            org.jetbrains.skia.Rect.makeXYWH(0f, 0f, SAMPLE.toFloat(), SAMPLE.toFloat()),
-                        )
-                        val px = Pixmap()
-                        try {
-                            if (!surface.peekPixels(px)) return@use null
-                            val pixels = ArrayList<FloatArray>(SAMPLE * SAMPLE)
-                            for (y in 0 until SAMPLE) for (x in 0 until SAMPLE) {
-                                val c = px.getColor(x, y)
-                                pixels.add(
-                                    floatArrayOf(
-                                        ((c shr 16) and 0xFF) / 255f,
-                                        ((c shr 8) and 0xFF) / 255f,
-                                        (c and 0xFF) / 255f,
-                                    )
-                                )
-                            }
-                            kmeansPalette(pixels, k = 5)?.let { liftedPalette(it) }
-                        } finally {
-                            px.close()
-                        }
-                    }
+                    paletteOfImage(img)
                 } finally {
                     img.close()
                 }
@@ -520,6 +493,42 @@ fun rememberAlbumPalette(url: String?): AlbumPalette {
         if (palette != null) published = palette
     }
     return published
+}
+
+/**
+ * The palette of an already-decoded [img] — the half of [rememberAlbumPalette] after the
+ * fetch, shared with the screensaver's preloader, which decodes each cover once for both
+ * the picture and its colours. Does not close [img].
+ */
+internal fun paletteOfImage(img: Image): AlbumPalette? {
+    if (img.width <= 0 || img.height <= 0) return null
+    return Surface.makeRaster(
+        ImageInfo.makeN32(SAMPLE, SAMPLE, ColorAlphaType.UNPREMUL)
+    ).use { surface ->
+        surface.canvas.drawImageRect(
+            img,
+            org.jetbrains.skia.Rect.makeXYWH(0f, 0f, img.width.toFloat(), img.height.toFloat()),
+            org.jetbrains.skia.Rect.makeXYWH(0f, 0f, SAMPLE.toFloat(), SAMPLE.toFloat()),
+        )
+        val px = Pixmap()
+        try {
+            if (!surface.peekPixels(px)) return@use null
+            val pixels = ArrayList<FloatArray>(SAMPLE * SAMPLE)
+            for (y in 0 until SAMPLE) for (x in 0 until SAMPLE) {
+                val c = px.getColor(x, y)
+                pixels.add(
+                    floatArrayOf(
+                        ((c shr 16) and 0xFF) / 255f,
+                        ((c shr 8) and 0xFF) / 255f,
+                        (c and 0xFF) / 255f,
+                    )
+                )
+            }
+            kmeansPalette(pixels, k = 5)?.let { liftedPalette(it) }
+        } finally {
+            px.close()
+        }
+    }
 }
 
 /** OkHttp client for the one artwork fetch per album change — small and patient. */
