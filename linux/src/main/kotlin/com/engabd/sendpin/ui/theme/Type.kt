@@ -51,6 +51,37 @@ val AppFont: FontFamily = Roboto
 val MonoFont: FontFamily = JetBrainsMono
 
 /**
+ * The screensaver's display faces (`resources/fonts/display/`, all SIL OFL — licences
+ * beside them). One is set per album by `screensaver/SlideType.kt`, the way a record
+ * sleeve has its own lettering; nothing else in the panel uses them.
+ */
+object DisplayFonts {
+    private fun display(file: String, weight: FontWeight = FontWeight.Normal, style: FontStyle = FontStyle.Normal) =
+        Font(
+            "fonts/display/$file",
+            { FontResourceMarker::class.java.classLoader.getResourceAsStream("fonts/display/$file")!!.readBytes() },
+            weight,
+            style,
+        )
+
+    /** Variable file; its default instance is the light cut, which is the one wanted. */
+    val CormorantGaramond = FontFamily(display("CormorantGaramond-Variable.ttf"))
+    val DMSerifDisplay = FontFamily(
+        display("DMSerifDisplay-Regular.ttf"),
+        display("DMSerifDisplay-Italic.ttf", style = FontStyle.Italic),
+    )
+    val PoiretOne = FontFamily(display("PoiretOne-Regular.ttf"))
+    val BebasNeue = FontFamily(display("BebasNeue-Regular.ttf"))
+    val Anton = FontFamily(display("Anton-Regular.ttf"))
+    val SpaceMono = FontFamily(
+        display("SpaceMono-Regular.ttf"),
+        display("SpaceMono-Bold.ttf", FontWeight.Bold),
+    )
+    val Italiana = FontFamily(display("Italiana-Regular.ttf"))
+    val AbrilFatface = FontFamily(display("AbrilFatface-Regular.ttf"))
+}
+
+/**
  * The M3 type scale — full 30-style scale (15 baseline + 15 emphasized).
  *
  * ## Baseline styles (15)

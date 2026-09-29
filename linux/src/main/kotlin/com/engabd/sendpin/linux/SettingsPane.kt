@@ -27,8 +27,10 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -193,6 +195,9 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
                     }
                 }
 
+                // ── Screensaver ──
+                ScreensaverCard(model)
+
                 // ── Connections ──
                 SettingsCard(Icons.Default.Cable, "Connections",
                     "MPD plays; Jellyfin is the library; HueGhost drives the lights.") {
@@ -267,6 +272,79 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
                 symbols = true,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
+        }
+    }
+}
+
+/**
+ * The gallery that takes the screen when the panel is idle and nothing plays — see
+ * `screensaver/Screensaver.kt`. Everything it shows besides the art is a switch here.
+ */
+@Composable
+private fun ScreensaverCard(model: PanelModel) {
+    val settings = model.settings
+    val scope = rememberCoroutineScope()
+    val enabled by settings.screensaverEnabled.collectAsState(initial = true)
+    val delayMin by settings.screensaverDelayMin.collectAsState(initial = 10)
+    val style by settings.screensaverStyle.collectAsState(initial = "gallery")
+    val slideS by settings.screensaverSlideS.collectAsState(initial = 20)
+    val albums by settings.screensaverAlbums.collectAsState(initial = "all")
+    val clock by settings.screensaverClock.collectAsState(initial = true)
+    val details by settings.screensaverDetails.collectAsState(initial = true)
+    val hold by settings.screensaverHoldToPlay.collectAsState(initial = true)
+    val drift by settings.screensaverDrift.collectAsState(initial = true)
+
+    SettingsCard(Icons.Default.Slideshow, "Screensaver",
+        "When nothing is playing and the panel is left alone, your album covers take the screen.") {
+        ToggleRow("Album gallery", "A tap wakes the panel; music starting anywhere ends it.", enabled) { v ->
+            scope.launch { settings.setScreensaverEnabled(v) }
+        }
+        if (enabled) {
+            Label("Begins after")
+            SegmentedControl(
+                options = listOf(1, 5, 10, 20, 30, 60),
+                selected = delayMin,
+                label = { if (it == 60) "1 h" else "$it min" },
+                onSelect = { m -> scope.launch { settings.setScreensaverDelayMin(m) } },
+            )
+            Label("Style")
+            SegmentedControl(
+                options = listOf("gallery", "kenburns"),
+                selected = style,
+                label = { if (it == "gallery") "Gallery wall" else "Full bleed" },
+                onSelect = { s -> scope.launch { settings.setScreensaverStyle(s) } },
+            )
+            Hint(
+                if (style == "gallery") "The cover as a lit print on a wash of its own colours."
+                else "Artist backdrop (or the cover) edge to edge, with a slow pan and zoom.",
+            )
+            Label("Each album for")
+            SegmentedControl(
+                options = listOf(10, 20, 30, 60),
+                selected = slideS,
+                label = { if (it == 60) "1 min" else "$it s" },
+                onSelect = { s -> scope.launch { settings.setScreensaverSlideS(s) } },
+            )
+            Label("Albums")
+            SegmentedControl(
+                options = listOf("all", "favourites", "recent"),
+                selected = albums,
+                label = { when (it) { "favourites" -> "Favourites"; "recent" -> "Recently added"; else -> "Whole library" } },
+                onSelect = { a -> scope.launch { settings.setScreensaverAlbums(a) } },
+            )
+            ToggleRow("Clock", "The time and date in a corner.", clock) { v ->
+                scope.launch { settings.setScreensaverClock(v) }
+            }
+            ToggleRow("Year and genre", "A quiet line under the title.", details) { v ->
+                scope.launch { settings.setScreensaverDetails(v) }
+            }
+            ToggleRow("Hold to play", "Press and hold a cover to play that album.", hold) { v ->
+                scope.launch { settings.setScreensaverHoldToPlay(v) }
+            }
+            ToggleRow("Burn-in drift", "Moves the words and clock a few pixels over time, since the screen never sleeps.", drift) { v ->
+                scope.launch { settings.setScreensaverDrift(v) }
+            }
+            PillButton("Preview now", icon = Icons.Default.PlayArrow, onClick = { model.screensaverNow.value = true })
         }
     }
 }

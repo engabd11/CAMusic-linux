@@ -22,6 +22,8 @@ import com.engabd.sendpin.linux.PanelModel
 import com.engabd.sendpin.linux.PanelShell
 import com.engabd.sendpin.linux.PanelTab
 import com.engabd.sendpin.linux.PortraitShell
+import com.engabd.sendpin.linux.screensaver.IdleGate
+import com.engabd.sendpin.linux.screensaver.ScreensaverHost
 import com.engabd.sendpin.ma.MaItem
 import com.engabd.sendpin.ma.MaSearchResults
 import com.engabd.sendpin.ui.theme.AccentChoice
@@ -131,13 +133,32 @@ fun main(args: Array<String>) {
     portrait("13-settings", PanelTab.SETTINGS)
     // Tall renders: a whole scrolling page at once, for review.
     portrait("15-lights-full", PanelTab.LIGHTS, height = 1700)
-    portrait("16-settings-full", PanelTab.SETTINGS, height = 2500)
+    portrait("16-settings-full", PanelTab.SETTINGS, height = 3900)
     portrait("17-home-full", PanelTab.LIBRARY, height = 2600)
 
     val model = freshModel()
     render(File(out, "14-landscape.png"), 1280, 800) {
         Themed { PanelShell(model, LayoutMode.LANDSCAPE) }
     }
+
+    // The screensaver, forced on ("Preview now") with nothing playing. Long renders: the
+    // feed loads over real HTTP, then the first slide dissolves in and its words enter.
+    fun screensaver(name: String, style: String, width: Int, height: Int, clock: Boolean = true) {
+        val m = freshModel()
+        runBlocking {
+            m.settings.setScreensaverStyle(style)
+            m.settings.setScreensaverClock(clock)
+        }
+        m.state.value = m.state.value?.copy(playing = false)
+        m.screensaverNow.value = true
+        render(File(out, "$name.png"), width, height, frames = 320) {
+            Themed { ScreensaverHost(m, remember { IdleGate() }) }
+        }
+    }
+    screensaver("18-screensaver-gallery-landscape", "gallery", 1280, 800)
+    screensaver("19-screensaver-gallery-portrait", "gallery", 800, 1280)
+    screensaver("20-screensaver-fullbleed-landscape", "kenburns", 1280, 800)
+    screensaver("21-screensaver-fullbleed-portrait", "kenburns", 800, 1280, clock = false)
 
     server.stop()
     println("Previews written to ${out.absolutePath}")
@@ -154,10 +175,10 @@ private fun Themed(content: @Composable () -> Unit) {
  * loads, Coil's image fetches, the palette extraction and the cover's rise-in to settle
  * — then write the last frame.
  */
-private fun render(file: File, width: Int, height: Int, content: @Composable () -> Unit) {
+private fun render(file: File, width: Int, height: Int, frames: Int = 90, content: @Composable () -> Unit) {
     val scene = ImageComposeScene(width, height, Density(1f), content = content)
     var t = 0L
-    repeat(90) {
+    repeat(frames) {
         scene.render(t)
         t += 16_000_000L
         Thread.sleep(25)
@@ -286,6 +307,7 @@ private class FakeLibrary(base: String) : MusicSource {
             // A few albums without art, to show the placeholder.
             if (i % 11 == 7) null else "$base/art/album-$i.png",
             null, favorite = i % 4 == 1, year = 1998 + (i * 7) % 27,
+            genres = listOf(GENRES[(i * 5) % GENRES.size]),
         )
     }
     val playlists: List<MaItem> = listOf("Sunday Morning", "Late Night Drive", "Kitchen Dancing", "Deep Focus", "Dinner Party").mapIndexed { i, n ->

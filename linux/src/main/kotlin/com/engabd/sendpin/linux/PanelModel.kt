@@ -268,6 +268,17 @@ class PanelModel(val settings: LinuxSettings) {
     /** Rebuild everything from the (just-saved) settings — Settings pane's Apply. */
     fun reconnect() = start()
 
+    /** Settings' "Preview now": show the screensaver at once; it clears this when dismissed. */
+    val screensaverNow = MutableStateFlow(false)
+
+    /** The screensaver's hold-to-play: the album from the start, through [playAlbum]. */
+    suspend fun playAlbumById(id: String) {
+        val src = source.value ?: return
+        val (album, tracks) = runCatching { src.albumDetail(id) }.getOrNull() ?: return
+        if (album == null || tracks.isEmpty()) return
+        playAlbum(album, tracks, 0)
+    }
+
     // ── Transport (the panes call these) ──────────────────────────────────
 
     // Each wakes the poll once MPD has taken it, so the screen and the Jellyfin

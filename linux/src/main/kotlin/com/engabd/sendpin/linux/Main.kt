@@ -1,6 +1,13 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import com.engabd.sendpin.linux.screensaver.IdleGate
+import com.engabd.sendpin.linux.screensaver.ScreensaverHost
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -63,6 +70,9 @@ fun main() = application {
     val theme by settings.themeChoice.collectAsState(initial = "dark")
     val glassBlur by settings.glassBlur.collectAsState(initial = true)
 
+    // The screensaver's idle clock, fed by every touch and key below.
+    val idle = remember { IdleGate() }
+
     val (panelWidth, panelHeight) = remember { panelSize() }
     Window(
         onCloseRequest = ::exitApplication,
@@ -78,6 +88,7 @@ fun main() = application {
         icon = icon?.let { bytes -> BitmapPainter(Image.makeFromEncoded(bytes).toComposeImageBitmap()) },
         undecorated = true,
         resizable = false,
+        onPreviewKeyEvent = { idle.touch(); false },
     ) {
         SendspinTheme(
             theme = ThemeChoice.from(theme),
@@ -85,7 +96,23 @@ fun main() = application {
             seedAccent = Color(fixed),
             glassBlur = glassBlur,
         ) {
-            PanelShell(model = model, layoutMode = LayoutMode.from(layout))
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    // Every touch, anywhere, restarts the screensaver's clock. The Initial
+                    // pass sees it before any pane does, and nothing is consumed.
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent(PointerEventPass.Initial)
+                                idle.touch()
+                            }
+                        }
+                    },
+            ) {
+                PanelShell(model = model, layoutMode = LayoutMode.from(layout))
+                ScreensaverHost(model, idle)
+            }
         }
     }
 }
