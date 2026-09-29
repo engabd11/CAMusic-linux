@@ -40,8 +40,14 @@ private fun panelSize(): Pair<Dp, Dp> {
 
 fun main() = application {
     val settings = remember { LinuxSettings(LinuxSettings.defaultPath()) }
-    val model = remember { PanelModel(settings) }
-    // Clients built from settings; the 1 Hz poll loop starts here.
+    val model = remember {
+        PanelModel(settings).also { m ->
+            // Every way out — the window closing, the Quit row's exitProcess, systemd's
+            // SIGTERM — ends the Jellyfin session, so HueGhost lets go at once.
+            Runtime.getRuntime().addShutdownHook(Thread { m.close() })
+        }
+    }
+    // Clients built from settings; the poll loop starts here.
     LaunchedEffect(Unit) { model.start() }
 
     // The CAMusic mark (the original repo's docs/app-icon.png) on the window itself —
