@@ -11,13 +11,17 @@ import com.engabd.sendpin.mpd.MpdRemote
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The panel's one model: settings → clients, the MPD queue model, the 1 Hz poll
@@ -69,21 +73,29 @@ class PanelModel(val settings: LinuxSettings) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var pollJob: kotlinx.coroutines.Job? = null
+    private var idleJob: kotlinx.coroutines.Job? = null
 
     /**
-     * The Jellyfin id for an MPD queue index, or null when that entry has none —
-     * [SessionReporter]'s lookup, and the reason it skips reporting rather than reports a
-     * garbage id.
-     *
-     * `LocalTrack.id` can't just be read directly: since [reorderQueue] synthesises an
-     * entry (id = the MPD path, same as [LocalTrack.scrobbleId]) for anything in MPD's
-     * queue this panel didn't queue itself — `mpc add`, another client, a queue MPD already
-     * had running before this panel connected — comparing `id` against `scrobbleId` is what
-     * tells a real Jellyfin id (always a different string, a guid vs a file path) from a
-     * synthesised one (deliberately set equal to `scrobbleId` as that marker).
+     * Held across "read MPD, reconcile [queue]" in the poll and across "swap [queue], send
+     * MPD the new queue" in [playAlbum]. Without it a poll landing between [playAlbum]'s two
+     * steps reconciled the new album against MPD's *old* queue, which synthesised every
+     * entry — and the album then played with no Jellyfin ids, so nothing was reported.
      */
-    private fun trackIdAt(index: Int): String? =
-        queue.value.getOrNull(index)?.let { t -> t.id.takeIf { it != t.scrobbleId } }
+    private val queueLock = Mutex()
+
+    /** Wakes the poll at once: MPD's idle push, or the panel's own transport commands. */
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+
+    /**
+     * What the poll hands the reporter. Conflated: if Jellyfin is slow, the reporter
+     * skips to the newest reading (it diffs against its own last state, so a track
+     * change is still seen) and the poll never waits on HTTP.
+     */
+    private val readings = Channel<Reading>(Channel.CONFLATED)
+    private class Reading(val state: RemoteState?, val id: String?, val readAtMs: Long)
+
+    /** Serialises the reporter between its own coroutine and [close]. */
+    private val reporterLock = Mutex()
 
     private val reporter = SessionReporter(
         jellyfin = object : SessionReporter.Reporter {
@@ -100,10 +112,24 @@ class PanelModel(val settings: LinuxSettings) {
                 jf?.reportPlayback(id, completed = true, positionMs = positionMs)
             }
         },
-        trackIdAt = ::trackIdAt,
     )
 
     val reportingToJellyfin: Boolean get() = reporter.reporting
+
+    init {
+        // Declared below everything it touches — a field read in `init` before its own
+        // declaration is null at runtime, and only a release build shows it.
+        scope.launch {
+            for (r in readings) reporterLock.withLock {
+                runCatching {
+                    // Switched off mid-song: end the session rather than leave HueGhost
+                    // following a report that has stopped coming.
+                    if (settings.reportToJellyfin.first()) reporter.onState(r.state, r.id, r.readAtMs)
+                    else reporter.end()
+                }
+            }
+        }
+    }
 
     /** Build clients from current settings and start the poll loop. */
     fun start() {
@@ -154,24 +180,64 @@ class PanelModel(val settings: LinuxSettings) {
                 _hueGhost.value = HueGhostClient(hgUrlV, hgTokV)
             }
 
-            // The 1 Hz poll: transport truth, then the reporter, then the queue
-            // itself. This is the loop whose ~3 s tick HueGhost's 15 s music
-            // timeout depends on.
-            var tick = 0
-            while (scope.isActive) {
-                val s = remote?.poll()
-                state.value = s
-                if (settings.reportToJellyfin.first()) {
-                    runCatching { reporter.onState(s, System.currentTimeMillis()) }
+            idleJob?.cancel()
+            idleJob = scope.launch { MpdIdle(mpdAddr) { wake.trySend(Unit) }.run() }
+
+            // The poll: transport truth, the queue, then a reading for the reporter.
+            // Once a second, and at once whenever MPD's idle push (or a button here)
+            // says something changed — the reporter's 1 s tick and HueGhost's 15 s
+            // music timeout both depend on it never stalling, which is why the
+            // reporter runs on its own coroutine rather than in here.
+            var lastGainReadAt = 0L
+            while (isActive) {
+                queueLock.withLock {
+                    val s = remote?.poll()
+                    // Taken straight after the answer: the reporter extrapolates from it.
+                    val readAt = System.currentTimeMillis()
+                    state.value = s
+                    // Read after the status, so a track change between the two shows up
+                    // as a mismatch below rather than as the wrong song.
+                    val playingFile = if (s != null && !s.stopped) {
+                        runCatching { mpd?.currentSong()?.itemId }.getOrNull()
+                    } else {
+                        null
+                    }
+                    reconcileQueueFromMpd()
+                    val reading = when {
+                        s == null || s.stopped -> Reading(s, null, readAt)
+                        else -> when (val who = identify(queue.value, s.index, playingFile)) {
+                            is Identity.Known -> Reading(s, who.jellyfinId, readAt)
+                            Identity.Unverified -> null // next poll, once the two agree
+                        }
+                    }
+                    reading?.let { readings.trySend(it) }
                 }
-                reconcileQueueFromMpd()
                 // Another client can change MPD's loudness under us (see [replayGain]);
                 // one extra command every 10 s keeps the readback honest without
-                // doubling the 1 Hz poll's traffic.
-                if (++tick % 10 == 0) mpd?.replayGainMode()?.let { replayGain.value = it }
-                delay(1_000)
+                // doubling the poll's traffic.
+                val now = System.currentTimeMillis()
+                if (now - lastGainReadAt >= 10_000) {
+                    lastGainReadAt = now
+                    mpd?.replayGainMode()?.let { replayGain.value = it }
+                }
+                withTimeoutOrNull(1_000) { wake.receive() }
             }
         }
+    }
+
+    /**
+     * Quit: close the Jellyfin session so HueGhost lets go now rather than 15 s from now.
+     * Called from a JVM shutdown hook, so it covers the window closing, the Quit row's
+     * `exitProcess` and systemd's SIGTERM alike. Bounded — a dead server must not hold
+     * the panel open.
+     */
+    fun close() {
+        pollJob?.cancel()
+        idleJob?.cancel()
+        runBlocking {
+            withTimeoutOrNull(1_500) { reporterLock.withLock { runCatching { reporter.end() } } }
+        }
+        scope.cancel()
     }
 
     private fun hgUrlOr(v: String) = v
@@ -204,15 +270,22 @@ class PanelModel(val settings: LinuxSettings) {
 
     // ── Transport (the panes call these) ──────────────────────────────────
 
-    suspend fun playAt(index: Int) = remote?.playAt(index) ?: Unit
+    // Each wakes the poll once MPD has taken it, so the screen and the Jellyfin
+    // report follow at once even if the idle push is down.
+    suspend fun playAt(index: Int) = transport { playAt(index) }
     suspend fun togglePause() {
         val s = state.value ?: return
-        if (s.playing) remote?.pause() else remote?.resume()
+        transport { if (s.playing) pause() else resume() }
     }
 
-    suspend fun next() = remote?.next() ?: Unit
-    suspend fun previous() = remote?.previous() ?: Unit
-    suspend fun seekTo(ms: Long) = remote?.seekTo(ms) ?: Unit
+    suspend fun next() = transport { next() }
+    suspend fun previous() = transport { previous() }
+    suspend fun seekTo(ms: Long) = transport { seekTo(ms) }
+
+    private suspend fun transport(command: suspend MpdRemote.() -> Unit) {
+        remote?.command()
+        wake.trySend(Unit)
+    }
 
     /**
      * Level loudness: persist the choice, hand it to MPD (which applies the files'
@@ -282,8 +355,12 @@ class PanelModel(val settings: LinuxSettings) {
             statusLine.value = "That track will not queue — check Settings"
             return
         }
-        queue.value = queueTracks
-        remote!!.setQueue(queueTracks, at)
+        // Both halves under the poll's lock: see [queueLock].
+        queueLock.withLock {
+            queue.value = queueTracks
+            remote!!.setQueue(queueTracks, at)
+        }
+        wake.trySend(Unit)
     }
 }
 
@@ -323,3 +400,25 @@ internal fun synthesizeQueueTrack(m: MaItem): LocalTrack = LocalTrack(
     scrobbleId = m.itemId,
     scrobbleProvider = "mpd",
 )
+/** What the poll can say about the Jellyfin identity of the entry MPD is playing. */
+internal sealed interface Identity {
+    /** The queue entry is the file MPD is playing; [jellyfinId] is null when it has none. */
+    data class Known(val jellyfinId: String?) : Identity
+
+    /** The queue and MPD disagree this instant (mid-edit, mid-track-change): skip, don't guess. */
+    object Unverified : Identity
+}
+
+/**
+ * The Jellyfin id to report for MPD's entry [index], checked against [playingFile] — the
+ * file MPD itself says it is playing. Index alone was trusted before, and an index read
+ * against a queue that had just been swapped named a song from the wrong album.
+ *
+ * A synthesised entry (see [reorderQueue]: `id == scrobbleId`, queued by `mpc` or another
+ * client) is [Identity.Known] with no id — there is no Jellyfin session to report for it.
+ */
+internal fun identify(queue: List<LocalTrack>, index: Int, playingFile: String?): Identity {
+    val entry = queue.getOrNull(index) ?: return Identity.Unverified
+    if (playingFile == null || entry.scrobbleId != playingFile) return Identity.Unverified
+    return Identity.Known(entry.id.takeIf { it != entry.scrobbleId })
+}

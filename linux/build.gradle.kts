@@ -142,6 +142,17 @@ tasks.register<JavaExec>("runSmoke") {
     classpath = sourceSets["main"].runtimeClasspath
     environment(System.getenv())
 }
+
+// How precise the panel's Jellyfin reports are, seen the way HueGhost reads them — run on
+// the NUC while music plays. See tools/SyncProbe.kt.
+//   ./gradlew :linux:runSyncProbe
+tasks.register<JavaExec>("runSyncProbe") {
+    group = "verification"
+    description = "Measure the noise of this panel's Jellyfin session reports."
+    mainClass.set("com.engabd.sendpin.linux.tools.SyncProbeKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    environment(System.getenv())
+}
 // Offscreen previews of every pane, drawn with a fake library — the one way to *see* the
 // panel's UI from a machine that is not the NUC (`run` needs the Linux Skiko natives this
 // module pins). `src/test/.../preview/RenderPreviews.kt` renders each screen at the
