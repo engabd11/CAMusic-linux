@@ -1,6 +1,7 @@
 package com.engabd.sendpin.linux.screensaver
 
 import com.engabd.sendpin.ma.MaItem
+import kotlinx.coroutines.flow.first
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -137,6 +138,30 @@ class ScreensaverTest {
         assertEquals("1973  ·  SOUL  ·  FUNK", detailsLine(1973, listOf("Soul", "Funk", "Disco")))
         assertEquals("JAZZ", detailsLine(null, listOf("Jazz", "jazz ")))
         assertEquals("", detailsLine(null, emptyList()))
+    }
+
+    // ── Settings ──
+
+    @Test
+    fun `album-coloured text is off by default and persists`() = kotlinx.coroutines.runBlocking {
+        val path = java.nio.file.Files.createTempFile("camusic-ss", ".json").also { java.nio.file.Files.delete(it) }
+        val settings = com.engabd.sendpin.linux.LinuxSettings(path)
+        assertFalse(settings.screensaverAlbumText.first())
+        settings.setScreensaverAlbumText(true)
+        settings.setScreensaverStyle("bloom")
+        val reread = com.engabd.sendpin.linux.LinuxSettings(path)
+        assertTrue(reread.screensaverAlbumText.first())
+        assertEquals("bloom", reread.screensaverStyle.first())
+        assertEquals("regular", reread.screensaverTextSize.first())
+        assertEquals("right", reread.screensaverClockPosition.first())
+    }
+
+    @Test
+    fun `text size keys map to scales, unknown falls back to regular`() {
+        assertTrue(textScaleOf("small") < 1f)
+        assertEquals(1f, textScaleOf("regular"))
+        assertTrue(textScaleOf("large") > 1f)
+        assertEquals(1f, textScaleOf("huge"))
     }
 
     // ── SlideMeta ──

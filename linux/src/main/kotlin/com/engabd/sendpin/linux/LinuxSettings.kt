@@ -166,7 +166,10 @@ class LinuxSettings(private val path: Path) {
     val screensaverEnabled: Flow<Boolean> = bool("screensaver_enabled", true)
     /** Minutes untouched, with nothing playing, before the gallery begins. */
     val screensaverDelayMin: Flow<Int> = int("screensaver_delay_min", 10)
-    /** `gallery` (the cover as a lit print) | `kenburns` (full-bleed, slow pan and zoom). */
+    /**
+     * `gallery` (the cover as a lit print on its blurred wash) | `bloom` (the same print on
+     * the album's colours bleeding across the screen) | `kenburns` (full-bleed, slow pan and zoom).
+     */
     val screensaverStyle: Flow<String> = str("screensaver_style", "gallery")
     /** Seconds each album holds the screen. */
     val screensaverSlideS: Flow<Int> = int("screensaver_slide_s", 20)
@@ -179,6 +182,8 @@ class LinuxSettings(private val path: Path) {
     val screensaverHoldToPlay: Flow<Boolean> = bool("screensaver_hold_to_play", true)
     /** Drift the text and clock a few pixels over time — the panel never turns off. */
     val screensaverDrift: Flow<Boolean> = bool("screensaver_drift", true)
+    /** Set the words (and clock) in the showing record's colours, as the player does. */
+    val screensaverAlbumText: Flow<Boolean> = bool("screensaver_album_text", false)
 
     suspend fun setScreensaverEnabled(value: Boolean) = set("screensaver_enabled", JsonPrimitive(value))
     suspend fun setScreensaverDelayMin(value: Int) = set("screensaver_delay_min", JsonPrimitive(value))
@@ -189,6 +194,13 @@ class LinuxSettings(private val path: Path) {
     suspend fun setScreensaverDetails(value: Boolean) = set("screensaver_details", JsonPrimitive(value))
     suspend fun setScreensaverHoldToPlay(value: Boolean) = set("screensaver_hold_to_play", JsonPrimitive(value))
     suspend fun setScreensaverDrift(value: Boolean) = set("screensaver_drift", JsonPrimitive(value))
+    /** `small` | `regular` | `large` — the words and clock, scaled together. */
+    val screensaverTextSize: Flow<String> = str("screensaver_text_size", "regular")
+    /** `left` | `centre` | `right` — where along the top the clock sits. */
+    val screensaverClockPosition: Flow<String> = str("screensaver_clock_position", "right")
+    suspend fun setScreensaverTextSize(value: String) = set("screensaver_text_size", JsonPrimitive(value))
+    suspend fun setScreensaverClockPosition(value: String) = set("screensaver_clock_position", JsonPrimitive(value))
+    suspend fun setScreensaverAlbumText(value: Boolean) = set("screensaver_album_text", JsonPrimitive(value))
 
     companion object {
         /** The default settings path on this machine. */

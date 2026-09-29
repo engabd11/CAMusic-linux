@@ -293,6 +293,9 @@ private fun ScreensaverCard(model: PanelModel) {
     val details by settings.screensaverDetails.collectAsState(initial = true)
     val hold by settings.screensaverHoldToPlay.collectAsState(initial = true)
     val drift by settings.screensaverDrift.collectAsState(initial = true)
+    val albumText by settings.screensaverAlbumText.collectAsState(initial = false)
+    val textSize by settings.screensaverTextSize.collectAsState(initial = "regular")
+    val clockPosition by settings.screensaverClockPosition.collectAsState(initial = "right")
 
     SettingsCard(Icons.Default.Slideshow, "Screensaver",
         "When nothing is playing and the panel is left alone, your album covers take the screen.") {
@@ -309,14 +312,17 @@ private fun ScreensaverCard(model: PanelModel) {
             )
             Label("Style")
             SegmentedControl(
-                options = listOf("gallery", "kenburns"),
+                options = listOf("gallery", "bloom", "kenburns"),
                 selected = style,
-                label = { if (it == "gallery") "Gallery wall" else "Full bleed" },
+                label = { when (it) { "bloom" -> "Album colours"; "kenburns" -> "Full bleed"; else -> "Gallery wall" } },
                 onSelect = { s -> scope.launch { settings.setScreensaverStyle(s) } },
             )
             Hint(
-                if (style == "gallery") "The cover as a lit print on a wash of its own colours."
-                else "Artist backdrop (or the cover) edge to edge, with a slow pan and zoom.",
+                when (style) {
+                    "bloom" -> "The cover as a lit print, on the album's colours bleeding across the screen."
+                    "kenburns" -> "Artist backdrop (or the cover) edge to edge, with a slow pan and zoom."
+                    else -> "The cover as a lit print on a wash of its own colours."
+                },
             )
             Label("Each album for")
             SegmentedControl(
@@ -332,8 +338,27 @@ private fun ScreensaverCard(model: PanelModel) {
                 label = { when (it) { "favourites" -> "Favourites"; "recent" -> "Recently added"; else -> "Whole library" } },
                 onSelect = { a -> scope.launch { settings.setScreensaverAlbums(a) } },
             )
+            Label("Text size")
+            SegmentedControl(
+                options = listOf("small", "regular", "large"),
+                selected = textSize,
+                label = { it.replaceFirstChar { c -> c.uppercase() } },
+                onSelect = { v -> scope.launch { settings.setScreensaverTextSize(v) } },
+            )
+            ToggleRow("Album-coloured text", "Sets the words and clock in each record's own colour, like the player.", albumText) { v ->
+                scope.launch { settings.setScreensaverAlbumText(v) }
+            }
             ToggleRow("Clock", "The time and date in a corner.", clock) { v ->
                 scope.launch { settings.setScreensaverClock(v) }
+            }
+            if (clock) {
+                Label("Clock position")
+                SegmentedControl(
+                    options = listOf("left", "centre", "right"),
+                    selected = clockPosition,
+                    label = { it.replaceFirstChar { c -> c.uppercase() } },
+                    onSelect = { v -> scope.launch { settings.setScreensaverClockPosition(v) } },
+                )
             }
             ToggleRow("Year and genre", "A quiet line under the title.", details) { v ->
                 scope.launch { settings.setScreensaverDetails(v) }
