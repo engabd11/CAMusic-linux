@@ -121,7 +121,10 @@ class Slide(
     val logo: ImageBitmap?,
     val artistLogo: ImageBitmap?,
     val palette: AlbumPalette,
-)
+) {
+    /** The words' colour and the bleed's, split so the words pop — see [albumInk]. */
+    val look: AlbumInk = albumInk(palette)
+}
 
 /**
  * The preloader. Runs ahead of the screen: pulls albums from [SlideDeck], fetches their
