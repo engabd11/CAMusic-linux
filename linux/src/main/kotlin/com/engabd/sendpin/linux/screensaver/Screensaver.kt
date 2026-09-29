@@ -48,7 +48,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -361,7 +360,7 @@ private fun GallerySlide(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = maxWidth > maxHeight
         if (bleed) {
-            ColourBleed(slide.look.bleed, age)
+            ColourBleed(slide.look.bleed, if (extras.albumText) slide.look.bleedLevel else 1f, age)
         } else {
             CoverWash(slide, age)
         }
@@ -440,11 +439,12 @@ private fun CoverWash(slide: Slide, age: () -> Float) {
  * The album-colours backdrop: the record's palette bleeding across near-black, the way
  * CAMusic's player lights its canvas (ChameleonBloom) — four soft blooms, each wandering
  * on its own slow orbit. Painted from [AlbumInk.bleed], every album colour *except* the
- * words' ink, so the words never sit on their own colour. Drawn in one Canvas that reads
+ * words' ink, so the words never sit on their own colour, and dimmed to [level] where
+ * the exact ink would otherwise not read against it. Drawn in one Canvas that reads
  * the slide's age only while drawing, so the motion never recomposes.
  */
 @Composable
-private fun ColourBleed(bleed: List<Color>, age: () -> Float) {
+private fun ColourBleed(bleed: List<Color>, level: Float, age: () -> Float) {
     fun tone(i: Int) = bleed[i % bleed.size]
     Canvas(Modifier.fillMaxSize()) {
         drawRect(Color(0xFF07070A))
@@ -466,10 +466,10 @@ private fun ColourBleed(bleed: List<Color>, age: () -> Float) {
                 center = c,
             )
         }
-        bloom(tone(0), w * (0.12f + 0.06f * sin(t / 17f)), h * (0.18f + 0.05f * sin(t / 13f)), reach * 0.78f, 0.62f)
-        bloom(tone(1), w * (0.88f + 0.05f * sin(t / 19f)), h * (0.28f + 0.06f * sin(t / 11f)), reach * 0.62f, 0.46f)
-        bloom(tone(2), w * (0.25f + 0.06f * sin(t / 23f)), h * (0.92f + 0.04f * sin(t / 15f)), reach * 0.66f, 0.40f)
-        bloom(tone(3), w * (0.80f + 0.05f * sin(t / 14f)), h * (0.82f + 0.05f * sin(t / 21f)), reach * 0.70f, 0.44f)
+        bloom(tone(0), w * (0.12f + 0.06f * sin(t / 17f)), h * (0.18f + 0.05f * sin(t / 13f)), reach * 0.78f, 0.62f * level)
+        bloom(tone(1), w * (0.88f + 0.05f * sin(t / 19f)), h * (0.28f + 0.06f * sin(t / 11f)), reach * 0.62f, 0.46f * level)
+        bloom(tone(2), w * (0.25f + 0.06f * sin(t / 23f)), h * (0.92f + 0.04f * sin(t / 15f)), reach * 0.66f, 0.40f * level)
+        bloom(tone(3), w * (0.80f + 0.05f * sin(t / 14f)), h * (0.82f + 0.05f * sin(t / 21f)), reach * 0.70f, 0.44f * level)
         // a quiet vignette, so the edges settle and the words keep their contrast
         drawRect(
             Brush.radialGradient(
@@ -750,16 +750,17 @@ private fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlig
 // ── Clock and burn-in drift ─────────────────────────────────────────────
 
 /**
- * The words' colours. White by default; with album-coloured text, the record's ink —
- * the album colour that stands apart from the bleed, already lifted to clear the
- * contrast bar (see [albumInk]) — kept close to itself so the colour survives.
+ * The words' colours. White by default; with album-coloured text, every word is the
+ * record's ink exactly as the palette extracted it — no tint toward white, no
+ * transparency, both of which shift it off the sleeve's colour. Legibility is the
+ * bleed's job (see [albumInk]); the hierarchy is carried by size and spacing.
  */
-private class Inks(accent: Color?) {
-    val title = accent?.let { lerp(it, Color.White, 0.1f) } ?: Color.White
-    val artist = accent ?: Color.White.copy(alpha = 0.74f)
-    val details = accent?.copy(alpha = 0.85f) ?: Color.White.copy(alpha = 0.56f)
-    val time = accent?.let { lerp(it, Color.White, 0.15f) } ?: Color.White.copy(alpha = 0.9f)
-    val meta = accent?.copy(alpha = 0.85f) ?: Color.White.copy(alpha = 0.6f)
+private class Inks(ink: Color?) {
+    val title = ink ?: Color.White
+    val artist = ink ?: Color.White.copy(alpha = 0.74f)
+    val details = ink ?: Color.White.copy(alpha = 0.56f)
+    val time = ink ?: Color.White.copy(alpha = 0.9f)
+    val meta = ink ?: Color.White.copy(alpha = 0.6f)
 }
 
 /**
