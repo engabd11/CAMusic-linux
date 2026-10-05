@@ -85,8 +85,9 @@ private data class Slot(val art: NowArt, val serial: Long)
 
 /**
  * The cover: [art] in [shape], lifted on a [glow] of the album's own colour, changing
- * albums with [transition]. [living] animates the face on stage once it has arrived;
- * [rest] (0..1, read while drawing) settles it back and dims it while paused.
+ * albums with [transition]. [rest] (0..1, read while drawing) settles it back and dims
+ * it while paused. Otherwise the cover holds perfectly still — the living colours move
+ * the room behind it (LiquidBleed.kt), never the picture.
  */
 @Composable
 fun AlbumArtStage(
@@ -96,7 +97,6 @@ fun AlbumArtStage(
     glow: Color,
     shape: Shape = RoundedCornerShape(28.dp),
     glowElevation: Dp = 48.dp,
-    living: LivingArt = LivingArt.Still,
     rest: () -> Float = { 0f },
     contentDescription: String? = null,
 ) {
@@ -150,12 +150,8 @@ fun AlbumArtStage(
                             scaleY *= 1f - 0.03f * r
                             shadowElevation *= 1f - 0.45f * r
                         }
-                        // the face only lives once it is on stage
-                        livingMotion(living.level() * living.strength * p, living.time())
                     },
                     sheen = { faceSheen(kind, progress.value, entering = true) },
-                    living = living,
-                    livingGate = { progress.value },
                     rest = rest,
                 )
             }
@@ -249,8 +245,6 @@ private fun StageFace(
     contentDescription: String?,
     modifier: Modifier,
     sheen: () -> Sheen?,
-    living: LivingArt = LivingArt.Still,
-    livingGate: () -> Float = { 0f },
     rest: () -> Float = { 0f },
 ) {
     var failed by remember(art.url) { mutableStateOf(false) }
@@ -295,10 +289,7 @@ private fun StageFace(
                 contentScale = ContentScale.Crop,
                 onError = { failed = true },
                 onSuccess = { failed = false },
-                modifier = Modifier.fillMaxSize().graphicsLayer {
-                    val amount = living.level() * living.strength * livingGate()
-                    renderEffect = livingEffect(size.width, size.height, living.time(), amount)
-                },
+                modifier = Modifier.fillMaxSize(),
             )
         }
     }

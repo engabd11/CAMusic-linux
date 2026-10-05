@@ -135,7 +135,7 @@ playback.
 |---|---|---|
 | `art_hold_album` | `true` | Holds one cover for the whole album. Jellyfin names embedded art per *track*, so without this every skip reloaded the cover, wash and palette (the flash on skip). |
 | `album_transition` | `flip` | `flip` \| `dissolve` \| `slide` \| `off` — how the cover changes when a **new album** starts. A skip inside one album never moves it. |
-| `living_art` | `subtle` | `off` \| `subtle` \| `vivid` — from `living_art_delay_s` (default 10 s) into each track, the cover comes quietly alive: an SkSL flow field drifts soft texture (water, sky, smoke) while hard edges such as type stay still, light glints on the highlights, and the print breathes. Pausing settles it. |
+| `living_art` | `subtle` | `off` \| `subtle` \| `vivid` — living colours: from `living_art_delay_s` (default 10 s) into each track, the album's colour bleed behind the player (and in Listening mode) flows like a liquid mixture of the record's colours, gathering speed as it wakes and settling when paused. The cover itself stays still. Off brings back the soft blooms. |
 | `track_text_motion` | `true` | Title and artist glide over on a track change. |
 | `ambient_motion` | `true` | The album's colour blooms drift slowly behind the player and pages. |
 | `cover_rests_on_pause` | `true` | Paused, the cover settles back slightly and dims. |
@@ -207,7 +207,8 @@ panel looks the same on any distribution.
 | `LinuxSettings.kt` | JSON settings at `~/.config/camusic/settings.json`, Flow per key, atomic writes |
 | `PortraitShell.kt` | Portrait layout: the now-playing cover over the tabs, mini player, bottom nav |
 | `screensaver/` | The album gallery (nothing playing) and the listening view (playing, idle) |
-| `ui/NowArt.kt`, `ui/AlbumArtStage.kt`, `ui/LivingArt.kt` | The cover held per album, the album-change transition, the living cover shader |
+| `ui/NowArt.kt`, `ui/AlbumArtStage.kt` | The cover held per album, the album-change transition |
+| `ui/LivingArt.kt`, `ui/LiquidBleed.kt` | When the living colours flow, and the SkSL liquid that draws them |
 
 The two-identity rule is the load-bearing detail: a queue entry's `id` stays
 the **Jellyfin item id** (what session reporting names), while

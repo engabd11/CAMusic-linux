@@ -16,6 +16,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,7 +54,9 @@ import androidx.compose.ui.unit.sp
 import com.engabd.sendpin.audio.LocalTrack
 import com.engabd.sendpin.linux.PanelModel
 import com.engabd.sendpin.linux.ui.AlbumArtStage
+import com.engabd.sendpin.linux.ui.AlbumBleed
 import com.engabd.sendpin.linux.ui.ArtTransition
+import com.engabd.sendpin.linux.ui.LivingArt
 import com.engabd.sendpin.linux.ui.rememberLivingArt
 import com.engabd.sendpin.linux.ui.rememberNowArt
 import com.engabd.sendpin.ui.design.AlbumPalette
@@ -141,7 +144,7 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
             .background(Color.Black)
             .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onTap() }) },
     ) {
-        RoomLight(palette) { age.value }
+        RoomLight(palette, living, seed = nowArt.key.hashCode()) { age.value }
         // Read once here: inside the Row and Column below, the box's own scope is not
         // reachable (Compose's layout-scope marker), so the sizes travel as plain values.
         val w = maxWidth
@@ -169,7 +172,6 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
                 glow = palette.accent,
                 shape = RoundedCornerShape(14.dp),
                 glowElevation = 64.dp,
-                living = living,
                 contentDescription = track?.album ?: track?.title,
             )
         }
@@ -208,19 +210,24 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
 }
 
 /**
- * The room the record is played in: its palette's colours wandering slowly across
- * near-black (the gallery's colour bleed), eased across on an album change, and
- * darkened toward the edges so the words keep their contrast.
+ * The room the record is played in. With living colours on, the album's colours as a
+ * slowly flowing liquid over near-black (LiquidBleed.kt); off, its palette wandering in
+ * soft blooms (the gallery's colour bleed). Either way eased across on an album change
+ * and darkened toward the edges so the words keep their contrast.
  */
 @Composable
-private fun RoomLight(palette: AlbumPalette, age: () -> Float) {
-    val tones = albumInk(palette).bleed
-    fun tone(i: Int) = tones[i % tones.size]
-    val c0 by animateColorAsState(tone(0), tween(1_600), label = "room0")
-    val c1 by animateColorAsState(tone(1), tween(1_600), label = "room1")
-    val c2 by animateColorAsState(tone(2), tween(1_600), label = "room2")
-    val c3 by animateColorAsState(tone(3), tween(1_600), label = "room3")
-    ColourBleed(listOf(c0, c1, c2, c3), level = 0.72f, age = age)
+private fun BoxScope.RoomLight(palette: AlbumPalette, living: LivingArt, seed: Int, age: () -> Float) {
+    if (living.strength > 0f) {
+        AlbumBleed(palette, living, level = 1f, drift = false, seed = seed)
+    } else {
+        val tones = albumInk(palette).bleed
+        fun tone(i: Int) = tones[i % tones.size]
+        val c0 by animateColorAsState(tone(0), tween(1_600), label = "room0")
+        val c1 by animateColorAsState(tone(1), tween(1_600), label = "room1")
+        val c2 by animateColorAsState(tone(2), tween(1_600), label = "room2")
+        val c3 by animateColorAsState(tone(3), tween(1_600), label = "room3")
+        ColourBleed(listOf(c0, c1, c2, c3), level = 0.72f, age = age)
+    }
     Canvas(Modifier.fillMaxSize()) {
         drawRect(
             Brush.radialGradient(

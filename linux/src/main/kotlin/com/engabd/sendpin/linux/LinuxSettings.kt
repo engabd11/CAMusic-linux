@@ -208,9 +208,9 @@ class LinuxSettings(private val path: Path) {
     val artHoldAlbum: Flow<Boolean> = bool("art_hold_album", true)
     /** `flip` | `dissolve` | `slide` | `off` — how the cover changes when a new album starts. */
     val albumTransition: Flow<String> = str("album_transition", "flip")
-    /** `off` | `subtle` | `vivid` — the cover coming quietly alive a little into each track. */
+    /** `off` | `subtle` | `vivid` — the album's colours flowing like a liquid behind the player, a little into each track. */
     val livingArt: Flow<String> = str("living_art", "subtle")
-    /** Seconds into a track before the cover comes alive. */
+    /** Seconds into a track before the colours start to flow. */
     val livingArtDelayS: Flow<Int> = int("living_art_delay_s", 10)
     /** Title and artist glide over on a track change instead of jumping. */
     val trackTextMotion: Flow<Boolean> = bool("track_text_motion", true)

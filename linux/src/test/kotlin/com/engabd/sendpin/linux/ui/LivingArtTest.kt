@@ -2,8 +2,11 @@ package com.engabd.sendpin.linux.ui
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
-/** When the cover comes alive, and how strongly. */
+/** When the living colours flow, and how the liquid looks at each strength. */
 class LivingArtTest {
 
     @Test
@@ -30,5 +33,17 @@ class LivingArtTest {
         assertEquals(1f, livingStrength("subtle"))
         assertEquals(2f, livingStrength("vivid"))
         assertEquals(0f, livingStrength("nonsense"))
+    }
+
+    @Test
+    fun `off has no liquid, and vivid is bolder and quicker than subtle`() {
+        assertNull(liquidLook(livingStrength("off")))
+        val subtle = assertNotNull(liquidLook(livingStrength("subtle")))
+        val vivid = assertNotNull(liquidLook(livingStrength("vivid")))
+        assertTrue(vivid.alpha > subtle.alpha)
+        assertTrue(vivid.sharp > subtle.sharp)
+        assertTrue(vivid.speed > subtle.speed)
+        // never fully opaque: the album's wash and the words keep showing through
+        assertTrue(vivid.alpha < 1f)
     }
 }

@@ -161,15 +161,21 @@ private fun BoxScope.Drifting(
 }
 
 /**
- * Behind every pane: the playing album's wash, softer than the cover's, with the
- * panel-scaled blooms over it. This is what makes the library, queue, lights and
- * settings colourful — they sit in the same light as the record, and the glass cards
- * on them sample it.
+ * Behind every pane: the playing album's wash, softer than the cover's, with the album's
+ * colour bleed over it — the panel-scaled blooms, or the living liquid when that is on.
+ * This is what makes the library, queue, lights and settings colourful — they sit in the
+ * same light as the record, and the glass cards on them sample it.
  */
 @Composable
-fun BoxScope.PaneAmbience(url: String?, palette: AlbumPalette, drift: Boolean = false) {
+fun BoxScope.PaneAmbience(
+    url: String?,
+    palette: AlbumPalette,
+    drift: Boolean = false,
+    living: LivingArt = LivingArt.Still,
+    seed: Int = 0,
+) {
     MeltBackdrop(url = url, intensity = 0.85f, scrim = 0.45f)
-    PanelBloom(palette, 0.62f, drift)
+    AlbumBleed(palette, living, 0.62f, drift, seed)
 }
 
 // ─── Surfaces ────────────────────────────────────────────────────────────────

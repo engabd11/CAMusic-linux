@@ -22,7 +22,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 import com.engabd.sendpin.linux.ui.AlbumArtStage
+import com.engabd.sendpin.linux.ui.AlbumBleed
 import com.engabd.sendpin.linux.ui.ArtTransition
+import com.engabd.sendpin.linux.ui.LivingArt
 import com.engabd.sendpin.linux.ui.LocalNowArt
 import com.engabd.sendpin.linux.ui.rememberLivingArt
 import com.engabd.sendpin.linux.ui.rememberNowArt
@@ -209,6 +211,10 @@ private fun PortraitShellBody(
     val pageTransitions by model.settings.pageTransitions.collectAsState(initial = true)
     val retapHome by model.settings.libraryRetapHome.collectAsState(initial = true)
     val obscured by model.coverObscured.collectAsState()
+    // One flow clock for the whole screen, so the cover's room and the pages behind it
+    // are the same liquid at the same moment.
+    val living = rememberLivingArt(model)
+    val seed = LocalNowArt.current.key.hashCode()
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink)) {
         val screenHpx = with(LocalDensity.current) { maxHeight.toPx() }
@@ -221,7 +227,7 @@ private fun PortraitShellBody(
 
         Box(Modifier.fillMaxSize()) {
             if (!(expanded && coverOpaque)) {
-                PaneAmbience(art, LocalPalette.current, drift = ambientMotion && !obscured)
+                PaneAmbience(art, LocalPalette.current, drift = ambientMotion && !obscured, living = living, seed = seed)
             }
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -256,6 +262,7 @@ private fun PortraitShellBody(
         if (expanded) {
             NowPlayingCover(
                 model = model,
+                living = living,
                 collapsePx = collapsePx,
                 queueRevealPx = queueRevealPx,
                 onOpaque = { coverOpaque = it },
@@ -279,6 +286,7 @@ private fun PortraitShellBody(
 @Composable
 private fun NowPlayingCover(
     model: PanelModel,
+    living: LivingArt,
     collapsePx: Float,
     queueRevealPx: Float,
     onOpaque: (Boolean) -> Unit,
@@ -302,7 +310,6 @@ private fun NowPlayingCover(
     val restsOnPause by model.settings.coverRestsOnPause.collectAsState(initial = true)
     val textMotion by model.settings.trackTextMotion.collectAsState(initial = true)
     val obscured by model.coverObscured.collectAsState()
-    val living = rememberLivingArt(model)
     // Paused, the record settles back a little and dims; playing, it springs forward.
     val rest = remember { Animatable(0f) }
     LaunchedEffect(playing, restsOnPause, track != null) {
@@ -383,7 +390,9 @@ private fun NowPlayingCover(
         // The bloom over it: the album's colours spread over the whole panel, drawn
         // after the wash and before the content (Box children paint in declaration
         // order), so text keeps its contrast however bright the album is.
-        PanelBloom(LocalPalette.current, 1f, drift = ambientMotion && !obscured)
+        // With living colours on, the bleed is a slowly flowing liquid of the album's
+        // colours (LiquidBleed.kt); off, the soft blooms.
+        AlbumBleed(LocalPalette.current, living, 1f, drift = ambientMotion && !obscured, seed = nowArt.key.hashCode())
 
         Column(
             Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 20.dp),
@@ -407,8 +416,8 @@ private fun NowPlayingCover(
             // left half a cover-height of air beneath it); the square's height IS
             // its width. Rounded and lifted on a glow in the album's own accent, so
             // the record sits *on* its colour rather than cut out of it. The stage holds
-            // the cover still through a whole album and turns it over on a new one; a
-            // little way into each track the cover comes quietly alive (LivingArt.kt).
+            // the cover still through a whole album and turns it over on a new one; the
+            // living colours move the room around it, never the picture.
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 AlbumArtStage(
                     art = nowArt,
@@ -416,7 +425,6 @@ private fun NowPlayingCover(
                     transition = transition,
                     glow = accent,
                     shape = RoundedCornerShape(28.dp),
-                    living = living,
                     rest = { rest.value },
                     contentDescription = track?.album ?: track?.title,
                 )

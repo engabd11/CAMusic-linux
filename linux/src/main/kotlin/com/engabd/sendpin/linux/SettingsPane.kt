@@ -421,16 +421,16 @@ private fun MotionCard(model: PanelModel) {
                 else -> "The new cover simply replaces the old one."
             },
         )
-        Label("Living cover")
+        Label("Living colours")
         SegmentedControl(
             options = listOf("off", "subtle", "vivid"),
             selected = living,
             label = { it.replaceFirstChar { c -> c.uppercase() } },
             onSelect = { v -> scope.launch { settings.setLivingArt(v) } },
         )
-        Hint("A little way into each track the cover comes quietly alive: water, sky and smoke seem to drift, light plays on the highlights, and the print breathes. Pausing settles it.")
+        Hint("A little way into each track the album's colours behind the player start to flow, mixing like a liquid of inks; Vivid is bolder and quicker. The cover itself stays still, and pausing lets the colours settle. Off brings back the soft colour blooms.")
         if (living != "off") {
-            Label("Comes alive after")
+            Label("Starts flowing after")
             SegmentedControl(
                 options = listOf(5, 10, 20, 30),
                 selected = livingDelay,
