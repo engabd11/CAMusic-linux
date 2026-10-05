@@ -187,7 +187,11 @@ private fun renderAll(args: Array<String>) {
     // enough for the cover to arrive and, past the 10 s mark, begin to come alive.
     fun listening(name: String, width: Int, height: Int, clock: Boolean = true) {
         val m = freshModel()
-        runBlocking { m.settings.setListeningClock(clock) }
+        runBlocking {
+            m.settings.setListeningClock(clock)
+            // A still can't show the cover moving, and the shader is costly on a CPU.
+            m.settings.setLivingArt("off")
+        }
         m.listeningNow.value = true
         render(File(out, "$name.png"), width, height, frames = 320) {
             Themed { ListeningHost(m, remember { IdleGate() }) }
@@ -207,6 +211,9 @@ private fun Themed(content: @Composable () -> Unit) {
     SendspinTheme(theme = ThemeChoice.DARK, accentChoice = AccentChoice.ALBUM, glassBlur = true, content = content)
 }
 
+/** The wall-clock ceiling for one preview. */
+private const val RENDER_BUDGET_NS = 90_000_000_000L
+
 /**
  * Draw [content] for a couple of seconds of frames — long enough for the fake library's
  * loads, Coil's image fetches, the palette extraction and the cover's rise-in to settle
@@ -214,16 +221,24 @@ private fun Themed(content: @Composable () -> Unit) {
  */
 private fun render(file: File, width: Int, height: Int, frames: Int = 90, content: @Composable () -> Unit) {
     val scene = ImageComposeScene(width, height, Density(1f), content = content)
+    val started = System.nanoTime()
     var t = 0L
-    repeat(frames) {
+    var drawn = 0
+    while (drawn < frames) {
         scene.render(t)
         t += 16_000_000L
+        drawn++
+        // A software-rendered shader (CI has no GPU) can make every frame expensive;
+        // a preview that runs long is written as it stands rather than holding up the rest.
+        if (System.nanoTime() - started > RENDER_BUDGET_NS) break
         Thread.sleep(25)
     }
     val image = scene.render(t)
     file.writeBytes(image.encodeToData(EncodedImageFormat.PNG)!!.bytes)
     scene.close()
-    println("  ${file.name}")
+    val secs = (System.nanoTime() - started) / 1e9
+    if (drawn < frames) print("  (cut at frame $drawn of $frames)")
+    println("  ${file.name}  ${"%.1f".format(secs)} s")
 }
 
 // ─── Fake server ──────────────────────────────────────────────────────────────
