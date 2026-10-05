@@ -1,0 +1,79 @@
+name: Release
+
+# Cuts a CAMusic for Linux release: tests, packages the self-contained app (bundled
+# Java runtime) and a plain jar, and publishes both on the GitHub release for the tag.
+#
+#   git tag v1.2.3 && git push origin v1.2.3        # or run this workflow by hand
+#
+# Release notes come from docs/release-notes/<tag>.md when it exists.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release, e.g. v1.0.1 (created on the chosen branch if it does not exist)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Version from tag
+        run: |
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "Tag must look like v1.2.3, got $TAG" >&2; exit 1 ;; esac
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Unit tests
+        run: ./gradlew :linux:test
+
+      - name: Package
+        run: ./gradlew :linux:packageAppImage :linux:packageUberJarForCurrentOS -PappVersion="$VERSION"
+
+      - name: Assemble release files
+        run: |
+          set -euo pipefail
+          stage="CAMusic-linux-$VERSION-x86_64"
+          mkdir -p dist "$stage"
+          cp -a linux/build/compose/binaries/main/app/CAMusic "$stage/"
+          cp linux/packaging/install.sh linux/packaging/camusic.desktop LICENSE "$stage/"
+          cp linux/src/main/resources/icon.png "$stage/camusic.png"
+          tar -czf "dist/$stage.tar.gz" "$stage"
+          cp linux/build/compose/jars/*.jar "dist/CAMusic-linux-$VERSION.jar"
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          notes="docs/release-notes/$TAG.md"
+          if [ ! -f "$notes" ]; then
+            notes=$(mktemp)
+            echo "CAMusic for Linux $VERSION — see the README for install steps." > "$notes"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --title "CAMusic for Linux $VERSION" \
+              --notes-file "$notes" \
+              --target "$GITHUB_SHA"
+          fi

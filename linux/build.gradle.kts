@@ -52,12 +52,17 @@ compose.desktop {
         // Desktop install: ./gradlew :linux:packageDistributionForCurrentOS produces
         // a self-contained app image under linux/build/compose/binaries/main/app/CAMusic/
         // (bundled JRE, no system Java needed). Installed to /opt/camusic-linux with a
-        // desktop entry so it launches from the menu and the desktop like a real app.
+        // desktop entry (packaging/install.sh) so it launches from the menu like a real app.
+        // The release workflow builds it on a tag and attaches it to the GitHub release.
         nativeDistributions {
             targetFormats(TargetFormat.AppImage)
             packageName = "CAMusic"
-            packageVersion = "1.0.0"
-            description = "CAMusic control panel for the kitchen display"
+            // -PappVersion=1.2.3 from the release workflow (the tag); 1.0.0 locally.
+            packageVersion = providers.gradleProperty("appVersion").getOrElse("1.0.0")
+            // The whole JDK in the bundled runtime: a little larger, but no library can
+            // fail at runtime on a module jlink left out.
+            includeAllModules = true
+            description = "CAMusic control panel for the hi-fi panel"
             vendor = "engabd11"
             linux {
                 iconFile.set(project.file("src/main/resources/icon.png"))

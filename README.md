@@ -53,12 +53,27 @@ Working and live-verified end to end on the reference panel:
 - Both layout modes (landscape / portrait), chosen in Settings, on a WM-less X server
 - Unit tests for the panel, the MPD and Jellyfin clients (`:linux:test`, run by CI on every push)
 
-Not yet (deliberate, by the plan): packaging/installer, auto-play after queueing
-(MPD stays paused until you tap play), quality badges on foreign queues.
+Not yet: auto-play after queueing (MPD stays paused until you tap play), quality
+badges on foreign queues.
+
+## Install
+
+Download the latest `CAMusic-linux-<version>-x86_64.tar.gz` from
+[Releases](https://github.com/engabd11/CAMusic-linux/releases). It carries its own
+Java runtime, so nothing else is needed:
+
+```bash
+tar -xzf CAMusic-linux-<version>-x86_64.tar.gz
+cd CAMusic-linux-<version>-x86_64
+sudo ./install.sh            # → /opt/camusic-linux, a menu entry and the `camusic` command
+```
+
+`sudo ./install.sh --remove` takes it out again. A plain jar
+(`java -jar CAMusic-linux-<version>.jar`, JDK 21+) is attached to each release too.
 
 ## Requirements
 
-- **JDK 21+** (Kotlin JVM module; do not pin `jvmTarget` — let it follow the JDK)
+- **JDK 21+** to build or to run the plain jar (the release tarball bundles its own runtime)
 - **MPD** reachable at a `host:port` (default `127.0.0.1:6600`)
 - **Jellyfin** server with an **API key** (Dashboard → API Keys) and a music
   library whose file location MPD also mounts
@@ -146,6 +161,10 @@ export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 # self-contained app image (bundled JRE) under linux/build/compose/binaries/
 ./gradlew :linux:packageDistributionForCurrentOS
 ```
+
+**Releasing:** push a tag such as `v1.0.1` (or run the *Release* workflow by hand). The
+workflow tests, packages the app image and the jar, and publishes them on the GitHub
+release, with notes from `docs/release-notes/<tag>.md` when that file exists.
 
 The run task sets `-Dskiko.renderApi=OPENGL`; on a box without a working GPU
 path, switch it to `SOFTWARE` in `linux/build.gradle.kts`. On a window-manager-less X
