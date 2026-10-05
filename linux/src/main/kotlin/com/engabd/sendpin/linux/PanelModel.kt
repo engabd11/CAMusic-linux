@@ -42,6 +42,18 @@ class PanelModel(val settings: LinuxSettings) {
 
     /** The MPD queue as this panel built it — index-aligned with MPD's own. */
     val queue = MutableStateFlow<List<LocalTrack>>(emptyList())
+    /**
+     * Jellyfin track id → its album id, for the tracks this panel queued. Only the look
+     * reads it: the now-playing cover is held per album (`ui/NowArt.kt`), and a track's own
+     * [LocalTrack] has no album id to key on. Kept across queue swaps — an id maps to the
+     * same album whatever queue it is in.
+     */
+    val albumIds = MutableStateFlow<Map<String, String>>(emptyMap())
+    /**
+     * True while something covers the whole panel (the gallery or the listening view), so
+     * the now-playing cover underneath can stop animating what nobody can see.
+     */
+    val coverObscured = MutableStateFlow(false)
     /** Latest transport reading, polled at 1 Hz while playing. */
     val state = MutableStateFlow<RemoteState?>(null)
     /** Status line for the panes: what is connected and what is not. */
@@ -271,6 +283,9 @@ class PanelModel(val settings: LinuxSettings) {
     /** Settings' "Preview now": show the screensaver at once; it clears this when dismissed. */
     val screensaverNow = MutableStateFlow(false)
 
+    /** Settings' listening-view "Preview now": show it at once; it clears this when dismissed. */
+    val listeningNow = MutableStateFlow(false)
+
     /** The screensaver's hold-to-play: the album from the start, through [playAlbum]. */
     suspend fun playAlbumById(id: String) {
         val src = source.value ?: return
@@ -366,6 +381,11 @@ class PanelModel(val settings: LinuxSettings) {
             statusLine.value = "That track will not queue — check Settings"
             return
         }
+        // Each track's album, for the cover held per album. A track names its own album
+        // (Jellyfin's AlbumId, as parentId); an album header stands in where it doesn't.
+        val headerAlbum = album.itemId.takeIf { album.mediaType == "album" }
+        val ids = tracks.mapNotNull { t -> (t.parentId?.takeIf { it.isNotBlank() } ?: headerAlbum)?.let { t.itemId to it } }
+        if (ids.isNotEmpty()) albumIds.value = albumIds.value + ids
         // Both halves under the poll's lock: see [queueLock].
         queueLock.withLock {
             queue.value = queueTracks
@@ -406,6 +426,9 @@ internal fun synthesizeQueueTrack(m: MaItem): LocalTrack = LocalTrack(
     id = m.itemId,
     title = m.name,
     artist = m.subtitle,
+    // Kept for the look only: the now-playing cover is held per album, and a foreign
+    // queue's tracks would otherwise each count as an album of their own.
+    album = m.album?.takeIf { it.isNotBlank() },
     durationMs = (m.duration ?: 0) * 1000L,
     artUrl = m.image,
     scrobbleId = m.itemId,

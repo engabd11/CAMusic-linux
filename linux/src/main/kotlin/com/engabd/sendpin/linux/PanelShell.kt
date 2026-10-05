@@ -1,5 +1,7 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,7 +40,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.engabd.sendpin.linux.ui.LocalNowArt
 import com.engabd.sendpin.linux.ui.PaneAmbience
+import com.engabd.sendpin.linux.ui.rememberNowArt
 import com.engabd.sendpin.ui.design.LocalAccent
 import com.engabd.sendpin.ui.design.LocalPalette
 import com.engabd.sendpin.ui.design.a
@@ -92,7 +96,7 @@ fun PanelShell(model: PanelModel, layoutMode: LayoutMode) {
     Box(Modifier.fillMaxSize().background(Ink)) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             when (layoutMode) {
-                LayoutMode.LANDSCAPE -> LandscapeShell(model, tab, { tab = it }, libraryState)
+                LayoutMode.LANDSCAPE -> LandscapeShell(model, tab, { t -> tab = t }, libraryState)
                 // Portrait is the overlay shell: the now-playing cover IS the screen,
                 // swiped down to reveal tabs + mini bar + bottom nav (PortraitShell
                 // owns its tab state — the shared `tab` above is the landscape strip's).
@@ -114,24 +118,49 @@ private fun LandscapeShell(
     onTab: (PanelTab) -> Unit,
     libraryState: LibraryState,
 ) {
-    val state by model.state.collectAsState()
-    val queue by model.queue.collectAsState()
-    val art = queue.getOrNull(state?.index?.takeIf { it >= 0 } ?: 0)?.artUrl
+    // The cover held per album (ui/NowArt.kt) — the same single source the portrait
+    // shell uses, so a skip inside one record moves nothing on either layout.
+    val nowArt = rememberNowArt(model)
+    val art = nowArt.url
     val palette = rememberAlbumPalette(art)
-    CompositionLocalProvider(LocalPalette provides palette, LocalAccent provides palette.accent) {
+    val ambientMotion by model.settings.ambientMotion.collectAsState(initial = true)
+    val pageTransitions by model.settings.pageTransitions.collectAsState(initial = true)
+    val retapHome by model.settings.libraryRetapHome.collectAsState(initial = true)
+    val obscured by model.coverObscured.collectAsState()
+    CompositionLocalProvider(
+        LocalPalette provides palette,
+        LocalAccent provides palette.accent,
+        LocalNowArt provides nowArt,
+    ) {
         Box(Modifier.fillMaxSize()) {
-            PaneAmbience(art, palette)
+            PaneAmbience(art, palette, drift = ambientMotion && !obscured)
             Row(Modifier.fillMaxSize()) {
                 PlayerPane(Modifier.weight(PLAYER_WEIGHT_WIDE).fillMaxHeight(), model)
                 Box(Modifier.fillMaxHeight().width(1.dp).background(Hairline))
                 Column(Modifier.weight(1f - PLAYER_WEIGHT_WIDE).fillMaxHeight()) {
-                    TabStrip(Modifier.fillMaxWidth(), model = model, selected = tab, on = onTab)
+                    TabStrip(
+                        Modifier.fillMaxWidth(),
+                        model = model,
+                        selected = tab,
+                        on = { t ->
+                            // Library tapped while already showing: back to its home page.
+                            if (retapHome && t == PanelTab.LIBRARY && tab == PanelTab.LIBRARY) libraryState.home()
+                            onTab(t)
+                        },
+                    )
                     Box(Modifier.fillMaxSize()) {
-                        when (tab) {
-                            PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model, libraryState)
-                            PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
-                            PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
-                            PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
+                        val tabPane: @Composable (PanelTab) -> Unit = { t ->
+                            when (t) {
+                                PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model, libraryState)
+                                PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
+                                PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
+                                PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
+                            }
+                        }
+                        if (pageTransitions) {
+                            Crossfade(tab, Modifier.fillMaxSize(), tween(180), label = "tab") { tabPane(it) }
+                        } else {
+                            tabPane(tab)
                         }
                     }
                 }

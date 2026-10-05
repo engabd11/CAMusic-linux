@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.engabd.sendpin.linux.screensaver.IdleGate
+import com.engabd.sendpin.linux.screensaver.ListeningHost
 import com.engabd.sendpin.linux.screensaver.ScreensaverHost
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -111,6 +112,9 @@ fun main() = application {
                     },
             ) {
                 PanelShell(model = model, layoutMode = LayoutMode.from(layout))
+                // While music plays and nobody touches: the record takes the screen.
+                ListeningHost(model, idle)
+                // While nothing plays: the album gallery.
                 ScreensaverHost(model, idle)
             }
         }

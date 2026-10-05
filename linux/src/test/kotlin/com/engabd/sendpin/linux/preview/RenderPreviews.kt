@@ -23,6 +23,7 @@ import com.engabd.sendpin.linux.PanelShell
 import com.engabd.sendpin.linux.PanelTab
 import com.engabd.sendpin.linux.PortraitShell
 import com.engabd.sendpin.linux.screensaver.IdleGate
+import com.engabd.sendpin.linux.screensaver.ListeningHost
 import com.engabd.sendpin.linux.screensaver.ScreensaverHost
 import com.engabd.sendpin.ma.MaItem
 import com.engabd.sendpin.ma.MaSearchResults
@@ -170,6 +171,20 @@ fun main(args: Array<String>) {
     screensaver("23-screensaver-colours-portrait", "bloom", 800, 1280, albumText = true, textSize = "large", clockAt = "centre")
     screensaver("24-screensaver-gallery-albumtext", "gallery", 800, 1280, albumText = true, textSize = "small", clockAt = "left")
     screensaver("25-screensaver-large-landscape", "gallery", 1280, 800, textSize = "large", clockAt = "left")
+
+    // The listening view, forced on ("Preview now") while the fake album plays — long
+    // enough for the cover to arrive and, past the 10 s mark, begin to come alive.
+    fun listening(name: String, width: Int, height: Int, clock: Boolean = true) {
+        val m = freshModel()
+        runBlocking { m.settings.setListeningClock(clock) }
+        m.listeningNow.value = true
+        render(File(out, "$name.png"), width, height, frames = 320) {
+            Themed { ListeningHost(m, remember { IdleGate() }) }
+        }
+    }
+    listening("26-listening-portrait", 800, 1280)
+    listening("27-listening-landscape", 1280, 800)
+    listening("28-listening-portrait-noclock", 800, 1280, clock = false)
 
     server.stop()
     println("Previews written to ${out.absolutePath}")

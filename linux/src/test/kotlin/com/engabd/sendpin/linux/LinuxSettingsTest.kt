@@ -36,6 +36,35 @@ class LinuxSettingsTest {
     }
 
     @Test
+    fun `motion and listening options default on, with the flip and a subtle living cover`() = runTest {
+        val (settings, _) = tempSettings()
+        assertTrue(settings.artHoldAlbum.first())
+        assertEquals("flip", settings.albumTransition.first())
+        assertEquals("subtle", settings.livingArt.first())
+        assertEquals(10, settings.livingArtDelayS.first())
+        assertTrue(settings.trackTextMotion.first())
+        assertTrue(settings.ambientMotion.first())
+        assertTrue(settings.coverRestsOnPause.first())
+        assertTrue(settings.listeningMode.first())
+        assertEquals(3, settings.listeningDelayMin.first())
+        assertTrue(settings.listeningClock.first())
+        assertTrue(settings.libraryRetapHome.first())
+        assertTrue(settings.pageTransitions.first())
+    }
+
+    @Test
+    fun `motion options round-trip`() = runTest {
+        val (settings, path) = tempSettings()
+        settings.setAlbumTransition("dissolve")
+        settings.setLivingArt("vivid")
+        settings.setListeningMode(false)
+        val reloaded = LinuxSettings(path)
+        assertEquals("dissolve", reloaded.albumTransition.first())
+        assertEquals("vivid", reloaded.livingArt.first())
+        assertEquals(false, reloaded.listeningMode.first())
+    }
+
+    @Test
     fun `set persists to disk and a fresh instance reads it back`() = runTest {
         val (settings, path) = tempSettings()
         settings.setMpdAddress("192.168.0.202:6600")

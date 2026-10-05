@@ -35,6 +35,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import com.engabd.sendpin.linux.ui.AlbumArtStage
+import com.engabd.sendpin.linux.ui.ArtTransition
+import com.engabd.sendpin.linux.ui.LocalNowArt
+import com.engabd.sendpin.linux.ui.rememberLivingArt
 import com.engabd.sendpin.ui.design.glassSurface
 import com.engabd.sendpin.ui.theme.AppFont
 import com.engabd.sendpin.ui.theme.Glass
@@ -81,17 +85,21 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
                 .glassSurface(RoundedCornerShape(28.dp), Glass, border = Hairline),
             contentAlignment = androidx.compose.ui.Alignment.Center,
         ) {
-            val art = queue.getOrNull(index)?.artUrl
-            if (art != null) {
-                coil3.compose.AsyncImage(
-                    model = art,
-                    contentDescription = null,
-                    // Without a ContentScale, a tall cover inside this weighted Box could
-                    // exceed its bounds and get clipped by the parent instead of scaled to
-                    // fit — square crop matches every other cover in the app (AlbumTile,
-                    // AlbumDetailView).
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            val nowArt = LocalNowArt.current
+            if (track != null || nowArt.url != null) {
+                // The same stage as the portrait cover: still through an album, turned
+                // over on a new one, alive a little way into each track. Square-cropped,
+                // inside the glass card (no glow of its own — the card is its frame).
+                val transition by model.settings.albumTransition.collectAsState(initial = ArtTransition.FLIP)
+                AlbumArtStage(
+                    art = nowArt,
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                    transition = transition,
+                    glow = com.engabd.sendpin.ui.design.rememberAccent(),
+                    shape = RoundedCornerShape(28.dp),
+                    glowElevation = 0.dp,
+                    living = rememberLivingArt(model),
+                    contentDescription = track?.album ?: track?.title,
                 )
             } else {
                 Text(
@@ -148,10 +156,12 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TransportButton(Icons.Default.SkipPrevious, "Previous") { scope.launch { model.previous() } }
-            TransportButton(
-                if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                "Play/Pause",
-                big = true,
+            PlayCircle(
+                playing = playing,
+                accent = com.engabd.sendpin.ui.design.rememberAccent(),
+                modifier = Modifier.padding(horizontal = 12.dp).size(76.dp),
+                iconSize = 38.dp,
+                glow = 20.dp,
             ) { scope.launch { model.togglePause() } }
             TransportButton(Icons.Default.SkipNext, "Next") { scope.launch { model.next() } }
         }

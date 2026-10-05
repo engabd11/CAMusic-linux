@@ -1,6 +1,31 @@
 package com.engabd.sendpin.linux
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.graphicsLayer
+import com.engabd.sendpin.linux.ui.AlbumArtStage
+import com.engabd.sendpin.linux.ui.ArtTransition
+import com.engabd.sendpin.linux.ui.LocalNowArt
+import com.engabd.sendpin.linux.ui.rememberLivingArt
+import com.engabd.sendpin.linux.ui.rememberNowArt
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -150,16 +175,17 @@ fun PortraitShell(
     initiallyExpanded: Boolean = true,
     libraryState: LibraryState = remember { LibraryState() },
 ) {
-    val state by model.state.collectAsState()
-    val queue by model.queue.collectAsState()
-    val index = state?.index?.takeIf { it >= 0 } ?: 0
+    // The cover held per album (NowArt.kt): a skip inside one record changes nothing
+    // here, so the palette, the wash and the blooms stay exactly where they are.
+    val nowArt = rememberNowArt(model)
     // Extracted once per cover change, off the UI thread; the previous palette
     // is held while a new one is pending (see rememberAlbumPalette).
-    val palette = rememberAlbumPalette(queue.getOrNull(index)?.artUrl)
+    val palette = rememberAlbumPalette(nowArt.url)
 
     CompositionLocalProvider(
         LocalPalette provides palette,
         LocalAccent provides palette.accent,
+        LocalNowArt provides nowArt,
     ) {
         PortraitShellBody(model, initialTab, initiallyExpanded, libraryState)
     }
@@ -178,9 +204,11 @@ private fun PortraitShellBody(
     // full-screen blur) is then skipped, so the panel pays for one backdrop, not two.
     var coverOpaque by remember { mutableStateOf(false) }
 
-    val state by model.state.collectAsState()
-    val queue by model.queue.collectAsState()
-    val art = queue.getOrNull(state?.index?.takeIf { it >= 0 } ?: 0)?.artUrl
+    val art = LocalNowArt.current.url
+    val ambientMotion by model.settings.ambientMotion.collectAsState(initial = true)
+    val pageTransitions by model.settings.pageTransitions.collectAsState(initial = true)
+    val retapHome by model.settings.libraryRetapHome.collectAsState(initial = true)
+    val obscured by model.coverObscured.collectAsState()
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink)) {
         val screenHpx = with(LocalDensity.current) { maxHeight.toPx() }
@@ -192,18 +220,36 @@ private fun PortraitShellBody(
         val queueRevealPx = screenHpx * QUEUE_REVEAL_FRACTION
 
         Box(Modifier.fillMaxSize()) {
-            if (!(expanded && coverOpaque)) PaneAmbience(art, LocalPalette.current)
+            if (!(expanded && coverOpaque)) {
+                PaneAmbience(art, LocalPalette.current, drift = ambientMotion && !obscured)
+            }
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().weight(1f)) {
-                    when (tab) {
-                        PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model, libraryState)
-                        PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
-                        PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
-                        PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
+                    val tabPane: @Composable (PanelTab) -> Unit = { t ->
+                        when (t) {
+                            PanelTab.LIBRARY -> LibraryPane(Modifier.fillMaxSize(), model, libraryState)
+                            PanelTab.QUEUE -> QueuePane(Modifier.fillMaxSize(), model)
+                            PanelTab.LIGHTS -> LightsPane(Modifier.fillMaxSize(), model)
+                            PanelTab.SETTINGS -> SettingsPane(Modifier.fillMaxSize(), model)
+                        }
+                    }
+                    if (pageTransitions) {
+                        Crossfade(tab, Modifier.fillMaxSize(), tween(180), label = "tab") { tabPane(it) }
+                    } else {
+                        tabPane(tab)
                     }
                 }
                 MiniPlayerBar(model = model, onExpand = { expanded = true })
-                PortraitNavBar(model = model, selected = tab, on = { tab = it })
+                PortraitNavBar(
+                    model = model,
+                    selected = tab,
+                    on = { t ->
+                        // Library tapped while already showing: back to its home page,
+                        // wherever in an album or artist the browse had got to.
+                        if (retapHome && t == PanelTab.LIBRARY && tab == PanelTab.LIBRARY) libraryState.home()
+                        tab = t
+                    },
+                )
             }
         }
 
@@ -249,6 +295,22 @@ private fun NowPlayingCover(
     val posMs = state?.positionMs ?: 0L
     val durMs = state?.durationMs ?: track?.durationMs ?: 0L
     val playing = state?.playing ?: false
+
+    val nowArt = LocalNowArt.current
+    val transition by model.settings.albumTransition.collectAsState(initial = ArtTransition.FLIP)
+    val ambientMotion by model.settings.ambientMotion.collectAsState(initial = true)
+    val restsOnPause by model.settings.coverRestsOnPause.collectAsState(initial = true)
+    val textMotion by model.settings.trackTextMotion.collectAsState(initial = true)
+    val obscured by model.coverObscured.collectAsState()
+    val living = rememberLivingArt(model)
+    // Paused, the record settles back a little and dims; playing, it springs forward.
+    val rest = remember { Animatable(0f) }
+    LaunchedEffect(playing, restsOnPause, track != null) {
+        rest.animateTo(
+            if (restsOnPause && !playing && track != null) 1f else 0f,
+            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessVeryLow),
+        )
+    }
 
     // The live drag offset is plain state mutated synchronously per pointer
     // sample; the Animatable only owns the release settle — one animation at a
@@ -317,11 +379,11 @@ private fun NowPlayingCover(
             .background(Ink),
     ) {
         // The album wash behind everything — the backdrop the glass surfaces sample.
-        MeltBackdrop(url = track?.artUrl)
+        MeltBackdrop(url = nowArt.url)
         // The bloom over it: the album's colours spread over the whole panel, drawn
         // after the wash and before the content (Box children paint in declaration
         // order), so text keeps its contrast however bright the album is.
-        PanelBloom(LocalPalette.current, 1f)
+        PanelBloom(LocalPalette.current, 1f, drift = ambientMotion && !obscured)
 
         Column(
             Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 20.dp),
@@ -344,17 +406,19 @@ private fun NowPlayingCover(
             // the column's leftover height (weighting it letterboxed the art and
             // left half a cover-height of air beneath it); the square's height IS
             // its width. Rounded and lifted on a glow in the album's own accent, so
-            // the record sits *on* its colour rather than cut out of it.
+            // the record sits *on* its colour rather than cut out of it. The stage holds
+            // the cover still through a whole album and turns it over on a new one; a
+            // little way into each track the cover comes quietly alive (LivingArt.kt).
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                val shape = RoundedCornerShape(28.dp)
-                ArtImage(
-                    url = track?.artUrl,
-                    name = track?.title ?: "",
-                    shape = shape,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .shadow(48.dp, shape, ambientColor = accent, spotColor = accent),
+                AlbumArtStage(
+                    art = nowArt,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                    transition = transition,
+                    glow = accent,
+                    shape = RoundedCornerShape(28.dp),
+                    living = living,
+                    rest = { rest.value },
+                    contentDescription = track?.album ?: track?.title,
                 )
             }
 
@@ -374,33 +438,15 @@ private fun NowPlayingCover(
             }
 
             // Title block — centred, the overlay's own arrangement. Title and artist
-            // are sized to *fill* the space under the cover, not just sit in it.
-            Column(
-                Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    track?.title ?: "Nothing playing",
-                    color = TextPrimary,
-                    fontFamily = AppFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 32.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    listOfNotNull(track?.artist, track?.album).joinToString("  ·  ")
-                        .ifEmpty { "Queue an album from the library" },
-                    color = TextSecondary,
-                    fontFamily = AppFont,
-                    fontSize = 18.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-            }
+            // are sized to *fill* the space under the cover, not just sit in it. On a
+            // track change the old words lift away and the new ones rise into place.
+            TrackTitles(
+                id = track?.id,
+                title = track?.title ?: "Nothing playing",
+                subtitle = listOfNotNull(track?.artist, track?.album).joinToString("  ·  ")
+                    .ifEmpty { "Queue an album from the library" },
+                motion = textMotion,
+            )
 
             // Seek — the wavy bar, in the album's accent: a travelling wave up to
             // the knob while playing, a flat rail when paused. Scrub commits on
@@ -429,23 +475,13 @@ private fun NowPlayingCover(
                 CoverButton(Icons.Default.SkipPrevious, "Previous", 64.dp, 32.dp) {
                     scope.launch { model.previous() }
                 }
-                Box(
-                    Modifier
-                        .padding(horizontal = 28.dp)
-                        .size(92.dp)
-                        .shadow(28.dp, CircleShape, ambientColor = accent, spotColor = accent)
-                        .clip(CircleShape)
-                        .background(accent)
-                        .clickable { scope.launch { model.togglePause() } },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        if (playing) "Pause" else "Play",
-                        tint = Ink,
-                        modifier = Modifier.size(46.dp),
-                    )
-                }
+                PlayCircle(
+                    playing = playing,
+                    accent = accent,
+                    modifier = Modifier.padding(horizontal = 28.dp).size(92.dp),
+                    iconSize = 46.dp,
+                    glow = 28.dp,
+                ) { scope.launch { model.togglePause() } }
                 CoverButton(Icons.Default.SkipNext, "Next", 64.dp, 32.dp) {
                     scope.launch { model.next() }
                 }
@@ -504,15 +540,132 @@ private fun CoverButton(
     iconSize: Dp,
     onClick: () -> Unit,
 ) {
+    val press = remember { MutableInteractionSource() }
     Box(
         Modifier
             .padding(horizontal = 14.dp)
+            .pressScale(press)
             .size(boxSize)
             .glassSurface(RoundedCornerShape(100.dp), inkOn(0.08f), border = Hairline)
-            .clickable { onClick() },
+            .clickable(interactionSource = press, indication = LocalIndication.current) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, label, tint = TextPrimary, modifier = Modifier.size(iconSize))
+    }
+}
+
+/**
+ * The play / pause circle: the accent disc on a glow that brightens while the music
+ * plays and settles when it stops; the glyph turns over between the two states, and the
+ * whole disc gives a little under the thumb.
+ */
+@Composable
+internal fun PlayCircle(
+    playing: Boolean,
+    accent: Color,
+    modifier: Modifier,
+    iconSize: Dp,
+    glow: Dp,
+    onClick: () -> Unit,
+) {
+    val press = remember { MutableInteractionSource() }
+    val lift by animateDpAsState(if (playing) glow else glow * 0.45f, tween(600), label = "playGlow")
+    Box(
+        modifier
+            .pressScale(press)
+            .shadow(lift, CircleShape, ambientColor = accent, spotColor = accent)
+            .clip(CircleShape)
+            .background(accent)
+            .clickable(interactionSource = press, indication = LocalIndication.current, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = playing,
+            transitionSpec = {
+                (fadeIn(tween(180, delayMillis = 60)) + scaleIn(tween(240, delayMillis = 60), initialScale = 0.55f)) togetherWith
+                    (fadeOut(tween(140)) + scaleOut(tween(180), targetScale = 0.55f))
+            },
+            label = "playGlyph",
+        ) { on ->
+            Icon(
+                if (on) Icons.Default.Pause else Icons.Default.PlayArrow,
+                if (on) "Pause" else "Play",
+                tint = Ink,
+                modifier = Modifier.size(iconSize),
+            )
+        }
+    }
+}
+
+/** A touch target that gives a little while held, and springs back on release. */
+internal fun Modifier.pressScale(source: MutableInteractionSource, pressed: Float = 0.92f): Modifier = composed {
+    val down by source.collectIsPressedAsState()
+    val s by animateFloatAsState(
+        if (down) pressed else 1f,
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "press",
+    )
+    graphicsLayer {
+        scaleX = s
+        scaleY = s
+    }
+}
+
+/**
+ * The cover's title and artist · album, changing with the track: the old pair lifts and
+ * fades, the new title rises into its place and the line under it follows a beat later.
+ * [motion] off cuts straight to the new words.
+ */
+@Composable
+private fun TrackTitles(id: String?, title: String, subtitle: String, motion: Boolean) {
+    AnimatedContent(
+        targetState = Triple(id, title, subtitle),
+        contentKey = { it.first },
+        transitionSpec = {
+            // The new words come in on their own (animateEnterExit below), staggered;
+            // the container itself only carries the old pair away.
+            val out = if (!motion) ExitTransition.None
+            else fadeOut(tween(220)) + slideOutVertically(tween(260)) { -it / 6 }
+            (EnterTransition.None togetherWith out) using SizeTransform(clip = false)
+        },
+        modifier = Modifier.fillMaxWidth(),
+        label = "trackTitles",
+    ) { (_, t, sub) ->
+        Column(
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                t,
+                color = TextPrimary,
+                fontFamily = AppFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 32.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = if (motion) Modifier.animateEnterExit(
+                    enter = fadeIn(tween(420, delayMillis = 140)) +
+                        slideInVertically(tween(560, delayMillis = 140, easing = FastOutSlowInEasing)) { it / 3 },
+                    exit = ExitTransition.None,
+                ) else Modifier,
+            )
+            Text(
+                sub,
+                color = TextSecondary,
+                fontFamily = AppFont,
+                fontSize = 18.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = if (motion) Modifier.animateEnterExit(
+                    enter = fadeIn(tween(420, delayMillis = 240)) +
+                        slideInVertically(tween(560, delayMillis = 240, easing = FastOutSlowInEasing)) { it / 2 },
+                    exit = ExitTransition.None,
+                ) else Modifier,
+            )
+        }
     }
 }
 
@@ -570,8 +723,8 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             ArtImage(
-                url = track?.artUrl,
-                name = track?.title ?: "",
+                url = LocalNowArt.current.url,
+                name = track?.album ?: track?.title ?: "",
                 shape = PanelShapes.Thumb,
                 modifier = Modifier.size(60.dp),
             )
@@ -619,21 +772,13 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                 ) {
                     Icon(Icons.Default.SkipPrevious, "Previous", tint = TextSecondary, modifier = Modifier.size(32.dp))
                 }
-                Box(
-                    Modifier
-                        .size(60.dp)
-                        .clip(CircleShape)
-                        .background(accent)
-                        .clickable { scope.launch { model.togglePause() } },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        if (playing) "Pause" else "Play",
-                        tint = Ink,
-                        modifier = Modifier.size(30.dp),
-                    )
-                }
+                PlayCircle(
+                    playing = playing,
+                    accent = accent,
+                    modifier = Modifier.size(60.dp),
+                    iconSize = 30.dp,
+                    glow = 0.dp,
+                ) { scope.launch { model.togglePause() } }
                 Box(
                     Modifier.size(56.dp).clip(CircleShape).clickable {
                         scope.launch { model.next() }

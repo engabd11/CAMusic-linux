@@ -112,6 +112,24 @@ Notes learned the hard way, kept here so the next setup is faster:
   keys on the MPD path — each queue entry carries both, stamped as
   `scrobbleId`/`scrobbleProvider=mpd` with `id` kept as the Jellyfin id.
 
+### Look and motion options
+
+Every visual extra is a switch in **Settings → Now playing & motion** and
+**Settings → Listening mode** (or a key in `settings.json`). None of them touch
+playback.
+
+| Key | Default | What it does |
+|---|---|---|
+| `art_hold_album` | `true` | Holds one cover for the whole album. Jellyfin names embedded art per *track*, so without this every skip reloaded the cover, wash and palette (the flash on skip). |
+| `album_transition` | `flip` | `flip` \| `dissolve` \| `slide` \| `off` — how the cover changes when a **new album** starts. A skip inside one album never moves it. |
+| `living_art` | `subtle` | `off` \| `subtle` \| `vivid` — from `living_art_delay_s` (default 10 s) into each track, the cover comes quietly alive: an SkSL flow field drifts soft texture (water, sky, smoke) while hard edges such as type stay still, light glints on the highlights, and the print breathes. Pausing settles it. |
+| `track_text_motion` | `true` | Title and artist glide over on a track change. |
+| `ambient_motion` | `true` | The album's colour blooms drift slowly behind the player and pages. |
+| `cover_rests_on_pause` | `true` | Paused, the cover settles back slightly and dims. |
+| `listening_mode` | `true` | While music plays and nobody touches the panel for `listening_delay_min` (default 3), the record takes the screen: a large living cover, the title set in a display face, a hairline of progress and the signal path. A tap brings the controls back. `listening_clock` shows the time. |
+| `library_retap_home` | `true` | Tapping **Library** while browsing an album or artist returns to the library's home page. |
+| `page_transitions` | `true` | Library pages slide; tabs cross-fade. |
+
 ## Build, run, test
 
 ```bash
