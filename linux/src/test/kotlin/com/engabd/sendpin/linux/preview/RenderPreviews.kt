@@ -55,6 +55,17 @@ import kotlin.random.Random
  */
 
 fun main(args: Array<String>) {
+    // Any failure must end the process: the preview server's thread is not a daemon,
+    // so an exception escaping main would leave the JVM (and a CI job) running forever.
+    try {
+        renderAll(args)
+    } catch (t: Throwable) {
+        t.printStackTrace()
+        kotlin.system.exitProcess(1)
+    }
+}
+
+private fun renderAll(args: Array<String>) {
     val out = File(args.firstOrNull() ?: "build/previews").apply { mkdirs() }
     val server = PreviewServer.start()
     val lib = FakeLibrary(server.base)

@@ -33,6 +33,7 @@ jobs:
       # rendering hiccup on the runner never hides a test result.
       - name: Render previews
         continue-on-error: true
+        timeout-minutes: 15
         run: ./gradlew :linux:renderPreviews
 
       - name: Upload previews
