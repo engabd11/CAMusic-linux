@@ -142,7 +142,11 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
             .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onTap() }) },
     ) {
         RoomLight(palette) { age.value }
-        val landscape = maxWidth > maxHeight
+        // Read once here: inside the Row and Column below, the box's own scope is not
+        // reachable (Compose's layout-scope marker), so the sizes travel as plain values.
+        val w = maxWidth
+        val h = maxHeight
+        val landscape = w > h
 
         if (clock) {
             Clock(
@@ -179,8 +183,8 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
                     .offset { driftOffset() },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                cover(Modifier.size(minOf(maxHeight * 0.70f, maxWidth * 0.42f)))
-                Spacer(Modifier.width(maxWidth * 0.06f))
+                cover(Modifier.size(minOf(h * 0.70f, w * 0.42f)))
+                Spacer(Modifier.width(w * 0.06f))
                 Box(Modifier.weight(1f)) {
                     TrackWords(model, track, TextAlign.Start, titleMaxSp = 64f)
                 }
