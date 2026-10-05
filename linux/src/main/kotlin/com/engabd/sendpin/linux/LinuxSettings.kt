@@ -202,6 +202,52 @@ class LinuxSettings(private val path: Path) {
     suspend fun setScreensaverClockPosition(value: String) = set("screensaver_clock_position", JsonPrimitive(value))
     suspend fun setScreensaverAlbumText(value: Boolean) = set("screensaver_album_text", JsonPrimitive(value))
 
+    // ── Now playing & motion (looks only — playback never reads these) ────
+
+    /** Hold one cover for the whole album, so a skip inside it never reloads the art. */
+    val artHoldAlbum: Flow<Boolean> = bool("art_hold_album", true)
+    /** `flip` | `dissolve` | `slide` | `off` — how the cover changes when a new album starts. */
+    val albumTransition: Flow<String> = str("album_transition", "flip")
+    /** `off` | `subtle` | `vivid` — the cover coming quietly alive a little into each track. */
+    val livingArt: Flow<String> = str("living_art", "subtle")
+    /** Seconds into a track before the cover comes alive. */
+    val livingArtDelayS: Flow<Int> = int("living_art_delay_s", 10)
+    /** Title and artist glide over on a track change instead of jumping. */
+    val trackTextMotion: Flow<Boolean> = bool("track_text_motion", true)
+    /** The album's colour blooms drift slowly behind the player. */
+    val ambientMotion: Flow<Boolean> = bool("ambient_motion", true)
+    /** The cover settles back and dims a little while paused. */
+    val coverRestsOnPause: Flow<Boolean> = bool("cover_rests_on_pause", true)
+
+    suspend fun setArtHoldAlbum(value: Boolean) = set("art_hold_album", JsonPrimitive(value))
+    suspend fun setAlbumTransition(value: String) = set("album_transition", JsonPrimitive(value))
+    suspend fun setLivingArt(value: String) = set("living_art", JsonPrimitive(value))
+    suspend fun setLivingArtDelayS(value: Int) = set("living_art_delay_s", JsonPrimitive(value))
+    suspend fun setTrackTextMotion(value: Boolean) = set("track_text_motion", JsonPrimitive(value))
+    suspend fun setAmbientMotion(value: Boolean) = set("ambient_motion", JsonPrimitive(value))
+    suspend fun setCoverRestsOnPause(value: Boolean) = set("cover_rests_on_pause", JsonPrimitive(value))
+
+    // ── Listening mode (the ambient view while music plays and nobody touches) ──
+
+    val listeningMode: Flow<Boolean> = bool("listening_mode", true)
+    /** Minutes untouched, while playing, before the listening view takes the screen. */
+    val listeningDelayMin: Flow<Int> = int("listening_delay_min", 3)
+    val listeningClock: Flow<Boolean> = bool("listening_clock", true)
+
+    suspend fun setListeningMode(value: Boolean) = set("listening_mode", JsonPrimitive(value))
+    suspend fun setListeningDelayMin(value: Int) = set("listening_delay_min", JsonPrimitive(value))
+    suspend fun setListeningClock(value: Boolean) = set("listening_clock", JsonPrimitive(value))
+
+    // ── Library navigation ────────────────────────────────────────────────
+
+    /** Tapping Library while already on it goes back to the library's home page. */
+    val libraryRetapHome: Flow<Boolean> = bool("library_retap_home", true)
+    /** Library pages slide and tabs cross-fade instead of cutting. */
+    val pageTransitions: Flow<Boolean> = bool("page_transitions", true)
+
+    suspend fun setLibraryRetapHome(value: Boolean) = set("library_retap_home", JsonPrimitive(value))
+    suspend fun setPageTransitions(value: Boolean) = set("page_transitions", JsonPrimitive(value))
+
     companion object {
         /** The default settings path on this machine. */
         fun defaultPath(): Path {

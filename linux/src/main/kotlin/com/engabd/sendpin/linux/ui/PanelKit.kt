@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -106,21 +108,56 @@ internal val PageGutter: Dp = 24.dp
  * strongest swatches so the whole height of a portrait page is tinted.
  */
 @Composable
-fun BoxScope.PanelBloom(palette: AlbumPalette, level: Float) {
+fun BoxScope.PanelBloom(palette: AlbumPalette, level: Float, drift: Boolean = false) {
     val l = level.coerceIn(0f, 1f)
     if (l <= 0f) return
-    val c0 by animateColorAsState(palette.swatch(0), tween(600), label = "bloom0")
-    val c1 by animateColorAsState(palette.swatch(1), tween(600), label = "bloom1")
-    val c2 by animateColorAsState(palette.swatch(2), tween(600), label = "bloom2")
-    val acc by animateColorAsState(palette.accent, tween(600), label = "bloomAccent")
+    // Eased over the album change's own length (the cover's flip), so the room and the
+    // record turn over together rather than the colours arriving first.
+    val c0 by animateColorAsState(palette.swatch(0), tween(1_200), label = "bloom0")
+    val c1 by animateColorAsState(palette.swatch(1), tween(1_200), label = "bloom1")
+    val c2 by animateColorAsState(palette.swatch(2), tween(1_200), label = "bloom2")
+    val acc by animateColorAsState(palette.accent, tween(1_200), label = "bloomAccent")
+    // The drift: each bloom wanders on its own slow orbit (the screensaver's colour-bleed
+    // motion, smaller). One clock, read only inside graphicsLayer — it never recomposes.
+    val clock = if (drift) {
+        rememberInfiniteTransition(label = "bloomDrift").animateFloat(
+            0f, 3_600f,
+            // reversing, not restarting: an hour on, the orbits run back without a jump
+            infiniteRepeatable(tween(3_600_000, easing = LinearEasing), RepeatMode.Reverse),
+            label = "bloomClock",
+        )
+    } else null
     BoxWithConstraints(Modifier.matchParentSize()) {
         val w = maxWidth
         val h = maxHeight
-        Bloom(c0, w * 1.05f, -w * 0.35f, -w * 0.40f, 0.46f * l)
-        Bloom(c1, w * 0.90f, w * 0.40f, h * 0.06f, 0.30f * l)
-        Bloom(c2, w * 0.95f, -w * 0.40f, h * 0.42f, 0.22f * l)
-        Bloom(acc, w * 1.10f, w * 0.30f, h * 0.70f, 0.26f * l)
+        Drifting(clock, 17f, 13f, 0.06f, 0.04f) { Bloom(c0, w * 1.05f, -w * 0.35f, -w * 0.40f, 0.46f * l) }
+        Drifting(clock, 19f, 11f, 0.05f, 0.05f) { Bloom(c1, w * 0.90f, w * 0.40f, h * 0.06f, 0.30f * l) }
+        Drifting(clock, 23f, 15f, 0.06f, 0.03f) { Bloom(c2, w * 0.95f, -w * 0.40f, h * 0.42f, 0.22f * l) }
+        Drifting(clock, 14f, 21f, 0.05f, 0.04f) { Bloom(acc, w * 1.10f, w * 0.30f, h * 0.70f, 0.26f * l) }
     }
+}
+
+/**
+ * One bloom on its own slow orbit: a whole-surface layer translated by a fraction of the
+ * surface, on two sine periods (seconds) that never line up. No [clock], no motion.
+ */
+@Composable
+private fun BoxScope.Drifting(
+    clock: State<Float>?,
+    periodX: Float,
+    periodY: Float,
+    reachX: Float,
+    reachY: Float,
+    content: @Composable () -> Unit,
+) {
+    if (clock == null) return content()
+    Box(
+        Modifier.matchParentSize().graphicsLayer {
+            val t = clock.value
+            translationX = size.width * reachX * kotlin.math.sin(t / periodX)
+            translationY = size.height * reachY * kotlin.math.sin(t / periodY)
+        },
+    ) { content() }
 }
 
 /**
@@ -130,9 +167,9 @@ fun BoxScope.PanelBloom(palette: AlbumPalette, level: Float) {
  * on them sample it.
  */
 @Composable
-fun BoxScope.PaneAmbience(url: String?, palette: AlbumPalette) {
+fun BoxScope.PaneAmbience(url: String?, palette: AlbumPalette, drift: Boolean = false) {
     MeltBackdrop(url = url, intensity = 0.85f, scrim = 0.45f)
-    PanelBloom(palette, 0.62f)
+    PanelBloom(palette, 0.62f, drift)
 }
 
 // ─── Surfaces ────────────────────────────────────────────────────────────────

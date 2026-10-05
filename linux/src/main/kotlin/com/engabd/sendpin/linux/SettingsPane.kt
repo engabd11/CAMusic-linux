@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Slideshow
+import androidx.compose.material.icons.filled.Animation
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -194,6 +196,12 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
                         scope.launch { settings.setGlassBlur(v) }
                     }
                 }
+
+                // ── Now playing & motion ──
+                MotionCard(model)
+
+                // ── Listening mode ──
+                ListeningCard(model)
 
                 // ── Screensaver ──
                 ScreensaverCard(model)
@@ -370,6 +378,114 @@ private fun ScreensaverCard(model: PanelModel) {
                 scope.launch { settings.setScreensaverDrift(v) }
             }
             PillButton("Preview now", icon = Icons.Default.PlayArrow, onClick = { model.screensaverNow.value = true })
+        }
+    }
+}
+
+/**
+ * How the player moves: the cover held per album and turned over on a new one, the cover
+ * coming alive into each track, the words and colours easing rather than cutting, and
+ * the library's navigation. Looks only — none of it touches playback.
+ */
+@Composable
+private fun MotionCard(model: PanelModel) {
+    val settings = model.settings
+    val scope = rememberCoroutineScope()
+    val hold by settings.artHoldAlbum.collectAsState(initial = true)
+    val transition by settings.albumTransition.collectAsState(initial = "flip")
+    val living by settings.livingArt.collectAsState(initial = "subtle")
+    val livingDelay by settings.livingArtDelayS.collectAsState(initial = 10)
+    val textMotion by settings.trackTextMotion.collectAsState(initial = true)
+    val ambient by settings.ambientMotion.collectAsState(initial = true)
+    val rests by settings.coverRestsOnPause.collectAsState(initial = true)
+    val retap by settings.libraryRetapHome.collectAsState(initial = true)
+    val pages by settings.pageTransitions.collectAsState(initial = true)
+
+    SettingsCard(Icons.Default.Animation, "Now playing & motion",
+        "How the cover and the room move with the music. Looks only — playback is untouched.") {
+        ToggleRow("Hold the cover through an album", "Skipping inside one record leaves the art, its colours and the backdrop perfectly still.", hold) { v ->
+            scope.launch { settings.setArtHoldAlbum(v) }
+        }
+        Label("When a new album starts")
+        SegmentedControl(
+            options = listOf("flip", "dissolve", "slide", "off"),
+            selected = transition,
+            label = { when (it) { "flip" -> "Flip"; "dissolve" -> "Dissolve"; "slide" -> "Slide"; else -> "Off" } },
+            onSelect = { v -> scope.launch { settings.setAlbumTransition(v) } },
+        )
+        Hint(
+            when (transition) {
+                "flip" -> "The cover turns over like a sleeve in the hand, and the room's colours turn with it."
+                "dissolve" -> "The old cover sinks back into a blur as the new one rises into focus."
+                "slide" -> "The old cover slides away and the new one arrives, like flicking through a crate."
+                else -> "The new cover simply replaces the old one."
+            },
+        )
+        Label("Living cover")
+        SegmentedControl(
+            options = listOf("off", "subtle", "vivid"),
+            selected = living,
+            label = { it.replaceFirstChar { c -> c.uppercase() } },
+            onSelect = { v -> scope.launch { settings.setLivingArt(v) } },
+        )
+        Hint("A little way into each track the cover comes quietly alive: water, sky and smoke seem to drift, light plays on the highlights, and the print breathes. Pausing settles it.")
+        if (living != "off") {
+            Label("Comes alive after")
+            SegmentedControl(
+                options = listOf(5, 10, 20, 30),
+                selected = livingDelay,
+                label = { "$it s" },
+                onSelect = { v -> scope.launch { settings.setLivingArtDelayS(v) } },
+            )
+        }
+        ToggleRow("Gliding titles", "The title and artist glide over on a track change instead of jumping.", textMotion) { v ->
+            scope.launch { settings.setTrackTextMotion(v) }
+        }
+        ToggleRow("Drifting colours", "The album's colour blooms wander slowly behind the player and the pages.", ambient) { v ->
+            scope.launch { settings.setAmbientMotion(v) }
+        }
+        ToggleRow("Cover rests when paused", "Paused, the cover settles back a little and dims; play brings it forward again.", rests) { v ->
+            scope.launch { settings.setCoverRestsOnPause(v) }
+        }
+        ToggleRow("Library tab goes home", "Tapping Library while browsing an album or artist goes back to the library's home page.", retap) { v ->
+            scope.launch { settings.setLibraryRetapHome(v) }
+        }
+        ToggleRow("Page transitions", "Library pages slide in and out; tabs cross-fade instead of cutting.", pages) { v ->
+            scope.launch { settings.setPageTransitions(v) }
+        }
+    }
+}
+
+/**
+ * The listening view — `screensaver/ListeningMode.kt`: the record taking the screen while
+ * music plays and the panel is left alone. The gallery card below covers when nothing plays.
+ */
+@Composable
+private fun ListeningCard(model: PanelModel) {
+    val settings = model.settings
+    val scope = rememberCoroutineScope()
+    val enabled by settings.listeningMode.collectAsState(initial = true)
+    val delayMin by settings.listeningDelayMin.collectAsState(initial = 3)
+    val clock by settings.listeningClock.collectAsState(initial = true)
+
+    SettingsCard(Icons.Default.Headphones, "Listening mode",
+        "While music plays and the panel is left alone, the controls step aside and the record takes the screen.") {
+        ToggleRow("Listening view", "A tap brings the controls back; the music stopping ends it.", enabled) { v ->
+            scope.launch { settings.setListeningMode(v) }
+        }
+        if (enabled) {
+            Label("Begins after")
+            SegmentedControl(
+                options = listOf(1, 3, 5, 10, 20),
+                selected = delayMin,
+                label = { "$it min" },
+                onSelect = { m -> scope.launch { settings.setListeningDelayMin(m) } },
+            )
+            ToggleRow("Clock", "The time and date above the cover.", clock) { v ->
+                scope.launch { settings.setListeningClock(v) }
+            }
+            Hint("Burn-in drift (in the screensaver settings below) moves this view too.")
+            PillButton("Preview now", icon = Icons.Default.PlayArrow, onClick = { model.listeningNow.value = true })
         }
     }
 }

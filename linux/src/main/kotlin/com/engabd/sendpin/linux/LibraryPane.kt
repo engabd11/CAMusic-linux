@@ -1,5 +1,15 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,6 +67,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -190,6 +201,22 @@ class LibraryState {
     internal fun push(route: LibraryRoute) { stack = stack.pushed(route) }
     internal fun pop() { stack = stack.popped() }
 
+    /**
+     * Bumped by [home]; Home scrolls back to its top whenever it changes — smoothly when
+     * Home was already showing, at once when it is coming back from a deeper page.
+     */
+    internal var homeSignal by mutableStateOf(0)
+        private set
+    internal var homeSmooth = false
+        private set
+
+    /** The nav's Library tab tapped again: straight back to the library's home page. */
+    internal fun home() {
+        homeSmooth = stack.size == 1
+        stack = listOf(LibraryRoute.Home)
+        homeSignal++
+    }
+
     internal fun bind(source: MusicSource) {
         if (bound === source) return
         bound = source
@@ -249,28 +276,53 @@ fun LibraryPane(modifier: Modifier, model: PanelModel, state: LibraryState = rem
     val open: (LibraryRoute) -> Unit = { state.push(it) }
     val back: () -> Unit = { state.pop() }
 
+    val pageTransitions by model.settings.pageTransitions.collectAsState(initial = true)
     val holder = rememberSaveableStateHolder()
-    val route = state.stack.last()
     Box(modifier) {
-        holder.SaveableStateProvider(route.key) {
-            when (route) {
-                LibraryRoute.Home -> HomeScreen(source, state, open, play)
-                LibraryRoute.Search -> SearchScreen(source, state, open, play, back)
-                is LibraryRoute.Browse -> BrowseScreen(route.category, source, state, now, open, play, back)
-                is LibraryRoute.Album -> AlbumScreen(route.item, source, now, open, play, back)
-                is LibraryRoute.Artist -> ArtistScreen(route.item, source, now, open, play, back)
-                is LibraryRoute.Playlist -> TrackListScreen(
-                    header = route.item, eyebrow = "Playlist", now = now, play = play, back = back,
-                    load = { source.playlistTracks(route.item.itemId) },
-                )
-                is LibraryRoute.Genre -> TrackListScreen(
-                    header = route.item, eyebrow = "Genre", now = now, play = play, back = back,
-                    load = { source.songsByGenre(route.item.name) },
-                )
+        // A deeper page slides in from the right over the one it came from; going back
+        // (or home) runs the same move the other way.
+        AnimatedContent(
+            targetState = RouteAt(state.stack.last(), state.stack.size),
+            contentKey = { it.route.key },
+            transitionSpec = {
+                if (!pageTransitions) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    val forward = targetState.depth >= initialState.depth
+                    val dir = if (forward) 1 else -1
+                    (fadeIn(tween(260, delayMillis = 40)) +
+                        slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { dir * it / 5 }) togetherWith
+                        (fadeOut(tween(180)) +
+                            slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -dir * it / 10 })
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            label = "libraryRoute",
+        ) { at ->
+            val route = at.route
+            holder.SaveableStateProvider(route.key) {
+                when (route) {
+                    LibraryRoute.Home -> HomeScreen(source, state, open, play)
+                    LibraryRoute.Search -> SearchScreen(source, state, open, play, back)
+                    is LibraryRoute.Browse -> BrowseScreen(route.category, source, state, now, open, play, back)
+                    is LibraryRoute.Album -> AlbumScreen(route.item, source, now, open, play, back)
+                    is LibraryRoute.Artist -> ArtistScreen(route.item, source, now, open, play, back)
+                    is LibraryRoute.Playlist -> TrackListScreen(
+                        header = route.item, eyebrow = "Playlist", now = now, play = play, back = back,
+                        load = { source.playlistTracks(route.item.itemId) },
+                    )
+                    is LibraryRoute.Genre -> TrackListScreen(
+                        header = route.item, eyebrow = "Genre", now = now, play = play, back = back,
+                        load = { source.songsByGenre(route.item.name) },
+                    )
+                }
             }
         }
     }
 }
+
+/** A library page and how deep in the stack it sits — the depth decides which way it slides. */
+private data class RouteAt(val route: LibraryRoute, val depth: Int)
 
 // ─── Home ────────────────────────────────────────────────────────────────────
 
@@ -305,6 +357,13 @@ private fun HomeScreen(
     }
 
     val listState = rememberLazyListState()
+    // The Library tab tapped again (LibraryState.home): back to the top of the page.
+    var seenSignal by rememberSaveable { mutableStateOf(state.homeSignal) }
+    LaunchedEffect(state.homeSignal) {
+        if (state.homeSignal == seenSignal) return@LaunchedEffect
+        seenSignal = state.homeSignal
+        if (state.homeSmooth) listState.animateScrollToItem(0) else listState.scrollToItem(0)
+    }
     val home = state.home
     Box(Modifier.fillMaxSize()) {
         LazyColumn(

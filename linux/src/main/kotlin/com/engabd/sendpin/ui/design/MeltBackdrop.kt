@@ -1,8 +1,11 @@
 package com.engabd.sendpin.ui.design
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -42,21 +45,28 @@ private fun saturate(amount: Float) =
 fun BoxScope.MeltBackdrop(url: String?, intensity: Float = 1f, scrim: Float = 0f) {
     val s = scrim.coerceIn(0f, 1f)
     Box(Modifier.matchParentSize().backdropSource()) {
-        if (url != null) {
-            AsyncImage(
-                model = url,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                colorFilter = saturate(2.7f),
-                modifier = Modifier
-                    .matchParentSize()
-                    .graphicsLayer {
-                        scaleX = 1.3f
-                        scaleY = 1.3f
-                    }
-                    .blur(64.dp, BlurredEdgeTreatment.Unbounded)
-                    .alpha(0.62f * (1f - 0.42f * s) * intensity.coerceIn(0f, 1f)),
-            )
+        // A new album's wash melts in over the old one rather than reloading from black.
+        // The now-playing URL is held per album (linux/ui/NowArt.kt), so this only ever
+        // runs on an album change — a skip inside the record leaves the wash untouched.
+        Crossfade(url, Modifier.matchParentSize(), tween(1_200), label = "meltWash") { u ->
+            Box(Modifier.fillMaxSize()) {
+                if (u != null) {
+                    AsyncImage(
+                        model = u,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        colorFilter = saturate(2.7f),
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer {
+                                scaleX = 1.3f
+                                scaleY = 1.3f
+                            }
+                            .blur(64.dp, BlurredEdgeTreatment.Unbounded)
+                            .alpha(0.62f * (1f - 0.42f * s) * intensity.coerceIn(0f, 1f)),
+                    )
+                }
+            }
         }
         Box(
             Modifier.matchParentSize().background(

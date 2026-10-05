@@ -2,7 +2,8 @@ package com.engabd.sendpin.linux.screensaver
 
 /**
  * When the gallery may take the screen: switched on, nothing playing, and nobody has
- * touched the panel for the configured delay.
+ * touched the panel for the configured delay — and, while music plays, when the
+ * listening view may ([shouldListen]).
  *
  * "Untouched" counts from the later of the last touch and the last time the music
  * stopped — the host calls [touch] on every pointer event and on every change of
@@ -30,5 +31,13 @@ class IdleGate(private val clock: () -> Long = System::currentTimeMillis) {
 
         fun shouldPrewarm(enabled: Boolean, playing: Boolean, idleMs: Long, delayMs: Long): Boolean =
             enabled && !playing && idleMs >= delayMs - PREWARM_MS
+
+        /**
+         * The listening view — the other half of the always-on panel: music playing and
+         * nobody touching for [delayMs]. Never true when [shouldShow] is, so the gallery
+         * and the listening view can't both claim the screen.
+         */
+        fun shouldListen(enabled: Boolean, playing: Boolean, idleMs: Long, delayMs: Long): Boolean =
+            enabled && playing && idleMs >= delayMs
     }
 }

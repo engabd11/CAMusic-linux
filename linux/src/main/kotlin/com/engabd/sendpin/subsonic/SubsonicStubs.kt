@@ -4,15 +4,10 @@ import androidx.compose.runtime.Immutable
 import com.engabd.sendpin.ma.MaItem
 
 /**
- * Desktop stand-ins for the three data shapes `MusicSource` expects from
- * `subsonic/SubsonicClient.kt` — [AlbumInfo], [ArtistInfo] and [SavedQueue].
- *
- * The 965-line Subsonic client itself is not shared (the Linux panel browses
- * Jellyfin only, per the plan), but `MusicSource.kt` is shared and names these
- * types in its defaults and signatures, so the shapes must exist here. Field
- * order, defaults and semantics mirror SubsonicClient.kt verbatim; if the
- * originals change shape, this file must follow — that coupling is the price of
- * the shared interface, and the sync task keeps the source of truth visible.
+ * The three data shapes `MusicSource` names in its defaults and signatures —
+ * [AlbumInfo], [ArtistInfo] and [SavedQueue]. The panel browses Jellyfin only, so
+ * there is no Subsonic client behind them; they exist so the interface keeps its
+ * shape for any source that wants to fill them.
  */
 
 /** What `getAlbumInfo2` carries, beyond the notes the app was reading. */

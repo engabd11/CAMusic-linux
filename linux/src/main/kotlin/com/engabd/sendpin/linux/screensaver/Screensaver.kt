@@ -144,6 +144,8 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
         if (playing) showing = false
     }
     LaunchedEffect(forced) { if (forced) showing = true }
+    // The player underneath stops animating what nobody can see (LivingArt, the blooms).
+    LaunchedEffect(showing) { model.coverObscured.value = showing }
     LaunchedEffect(enabled, delayMin, playing) {
         val delayMs = delayMin * 60_000L
         while (true) {
@@ -446,7 +448,7 @@ private fun CoverWash(slide: Slide, age: () -> Float) {
  * the slide's age only while drawing, so the motion never recomposes.
  */
 @Composable
-private fun ColourBleed(bleed: List<Color>, level: Float, age: () -> Float) {
+internal fun ColourBleed(bleed: List<Color>, level: Float, age: () -> Float) {
     fun tone(i: Int) = bleed[i % bleed.size]
     Canvas(Modifier.fillMaxSize()) {
         drawRect(Color(0xFF07070A))
@@ -707,7 +709,7 @@ private fun specOf(face: Face): FaceSpec = when (face) {
  * shrinking step by step, and only at the floor allowing a third line.
  */
 @Composable
-private fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlign, color: Color, modifier: Modifier) {
+internal fun FittedTitle(title: String, face: Face, maxSp: Float, align: TextAlign, color: Color, modifier: Modifier) {
     val spec = specOf(face)
     val shown = if (spec.caps) title.uppercase() else title
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -772,7 +774,7 @@ private class Inks(ink: Color?, neutral: Boolean = false) {
  * album-coloured text it takes the showing record's ink, easing across as slides change.
  */
 @Composable
-private fun Clock(accent: Color?, neutral: Boolean, scale: Float, align: Alignment.Horizontal, modifier: Modifier) {
+internal fun Clock(accent: Color?, neutral: Boolean, scale: Float, align: Alignment.Horizontal, modifier: Modifier) {
     val eased by animateColorAsState(accent ?: Color.White, tween(FADE_MS), label = "clockInk")
     val ink = Inks(if (accent != null) eased else null, neutral)
     var now by remember { mutableStateOf(LocalDateTime.now()) }
@@ -833,7 +835,7 @@ private fun Clock(accent: Color?, neutral: Boolean, scale: Float, align: Alignme
  * with periods of ten and seven minutes, stepped every few seconds: invisible as motion.
  */
 @Composable
-private fun rememberDrift(enabled: Boolean): () -> IntOffset {
+internal fun rememberDrift(enabled: Boolean): () -> IntOffset {
     var offset by remember { mutableStateOf(IntOffset.Zero) }
     val density = LocalDensity.current
     LaunchedEffect(enabled, density) {
