@@ -8,6 +8,7 @@ import com.engabd.sendpin.library.MusicSource
 import com.engabd.sendpin.ma.MaItem
 import com.engabd.sendpin.mpd.MpdClient
 import com.engabd.sendpin.mpd.MpdRemote
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -168,6 +169,7 @@ class PanelModel(val settings: LinuxSettings) {
             runCatching { client.setReplayGainMode(rg) }
             replayGain.value = client.replayGainMode()
             statusLine.value = if (err == null) "MPD connected — $mpdAddr" else "MPD: ${err.message}"
+            connectionLine = statusLine.value
 
             if (jfUrlV.isNotBlank() && jfTokenV.isNotBlank()) {
                 jellyfin = JellyfinClient(
@@ -186,6 +188,7 @@ class PanelModel(val settings: LinuxSettings) {
                 val jfErr = jellyfin?.pingError()
                 statusLine.value = (statusLine.value + "  ·  " +
                     if (jfErr == null) "Jellyfin connected" else "Jellyfin: $jfErr")
+                connectionLine = statusLine.value
             }
 
             if (hgUrlV.isNotBlank()) {
@@ -297,20 +300,75 @@ class PanelModel(val settings: LinuxSettings) {
     // ── Transport (the panes call these) ──────────────────────────────────
 
     // Each wakes the poll once MPD has taken it, so the screen and the Jellyfin
-    // report follow at once even if the idle push is down.
-    suspend fun playAt(index: Int) = transport { playAt(index) }
+    // report follow at once even if the idle push is down. None of them throws: see
+    // [guarded] — a refused command used to take the whole panel down.
+    suspend fun playAt(index: Int) = transport("Play") { playAt(index) }
+
+    /**
+     * Play / pause. A stopped player — the queue played to its end, or nothing was
+     * started — is *started* again: MPD's `pause 0` does nothing once stopped, so the
+     * play button used to do nothing there either. See [playAction].
+     */
     suspend fun togglePause() {
-        val s = state.value ?: return
-        transport { if (s.playing) pause() else resume() }
+        val s = state.value
+        val size = queue.value.size
+        when (playAction(s, size)) {
+            PlayAction.PAUSE -> transport("Pause") { pause() }
+            PlayAction.RESUME -> transport("Play") { resume() }
+            PlayAction.START -> transport("Play") { playAt(restartIndex(s, size)) }
+            PlayAction.NONE -> Unit
+        }
     }
 
-    suspend fun next() = transport { next() }
-    suspend fun previous() = transport { previous() }
-    suspend fun seekTo(ms: Long) = transport { seekTo(ms) }
+    /** Next track — nothing to do (rather than an error from MPD) when there is no next. */
+    suspend fun next() {
+        if (canSkipNext(state.value, queue.value.size)) transport("Next") { next() }
+    }
 
-    private suspend fun transport(command: suspend MpdRemote.() -> Unit) {
-        remote?.command()
+    /** Previous track (or the start of this one, as MPD does) — only while something is loaded. */
+    suspend fun previous() {
+        if (canSkipPrevious(state.value)) transport("Previous") { previous() }
+    }
+
+    suspend fun seekTo(ms: Long) {
+        if (state.value?.stopped == false) transport("Seek") { seekTo(ms) }
+    }
+
+    private suspend fun transport(what: String, command: suspend MpdRemote.() -> Unit) {
+        val r = remote ?: return
+        guarded(what) { r.command() }
         wake.trySend(Unit)
+    }
+
+    /** The connection summary [start] built — what [statusLine] returns to after an error clears. */
+    @Volatile
+    private var connectionLine = ""
+
+    /** The error line [guarded] last showed, so a success clears that and nothing else. */
+    @Volatile
+    private var shownError: String? = null
+
+    /**
+     * Runs a command a pane asked for, and never lets it throw. MPD refuses some commands
+     * outright — `next` or `previous` with nothing playing ("Not playing"), a play on an
+     * empty queue — and a dropped connection fails any of them. Each failure used to escape
+     * into the button's coroutine and crash the app; now the status line says what MPD said
+     * and the panel carries on. The next command that succeeds clears it again.
+     */
+    private suspend fun guarded(what: String, block: suspend () -> Unit) {
+        try {
+            block()
+            // Clear only our own error line — a hint the command itself wrote
+            // ("check the path prefix…") must stay up.
+            if (shownError != null && statusLine.value == shownError) statusLine.value = connectionLine
+            shownError = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val line = commandErrorLine(what, e.message, connectionLine)
+            shownError = line
+            statusLine.value = line
+        }
     }
 
     /**
@@ -318,9 +376,9 @@ class PanelModel(val settings: LinuxSettings) {
      * ReplayGain tags as it decodes), then read back what MPD actually took. `off`,
      * `track` or `album` — the Android app's three modes, spelled as MPD spells them.
      */
-    suspend fun setReplayGain(mode: String) {
+    suspend fun setReplayGain(mode: String) = guarded("Loudness") {
         settings.setReplayGainMode(mode)
-        val client = mpd ?: return
+        val client = mpd ?: return@guarded
         runCatching { client.setReplayGainMode(mode) }
         replayGain.value = client.replayGainMode() ?: replayGain.value
     }
@@ -331,10 +389,10 @@ class PanelModel(val settings: LinuxSettings) {
     // reconcileQueueFromMpd(), called every poll tick, is what actually
     // resyncs it — see that function's doc comment for why it re-orders the
     // existing list instead of rebuilding it from MPD's answer directly.
-    suspend fun removeFromQueue(index: Int) = remote?.removeAt(index) ?: Unit
-    suspend fun moveInQueue(from: Int, to: Int) = remote?.move(from, to) ?: Unit
-    suspend fun shuffleQueue() = remote?.shuffleQueue() ?: Unit
-    suspend fun clearQueue() = remote?.clear() ?: Unit
+    suspend fun removeFromQueue(index: Int) = guarded("Remove") { remote?.removeAt(index) }
+    suspend fun moveInQueue(from: Int, to: Int) = guarded("Move") { remote?.move(from, to) }
+    suspend fun shuffleQueue() = guarded("Shuffle") { remote?.shuffleQueue() }
+    suspend fun clearQueue() = guarded("Clear") { remote?.clear() }
 
     /**
      * Queue a Jellyfin album through MPD: resolve every item's file path, map to
@@ -342,7 +400,10 @@ class PanelModel(val settings: LinuxSettings) {
      * skipped — a queue that silently plays the wrong thing is worse than a
      * shorter one.
      */
-    suspend fun playAlbum(album: MaItem, tracks: List<MaItem>, startIndex: Int = 0) {
+    suspend fun playAlbum(album: MaItem, tracks: List<MaItem>, startIndex: Int = 0) =
+        guarded("Play") { queueAndPlay(album, tracks, startIndex) }
+
+    private suspend fun queueAndPlay(album: MaItem, tracks: List<MaItem>, startIndex: Int) {
         val jf = jellyfin ?: return
         val client = mpd ?: return
         val paths = JellyfinPaths.paths(
@@ -389,10 +450,55 @@ class PanelModel(val settings: LinuxSettings) {
         // Both halves under the poll's lock: see [queueLock].
         queueLock.withLock {
             queue.value = queueTracks
-            remote!!.setQueue(queueTracks, at)
+            (remote ?: return).setQueue(queueTracks, at)
         }
         wake.trySend(Unit)
     }
+}
+
+/** What the play button does, for [playAction]. */
+internal enum class PlayAction { PAUSE, RESUME, START, NONE }
+
+/**
+ * The play button's meaning in state [s] with [queueSize] tracks queued: pause what plays,
+ * resume what is paused, *start* a stopped player (MPD ignores a resume once stopped —
+ * the queue ran out, or it was never started), and nothing at all with nothing queued or
+ * MPD unread. Pure so every case is testable without a server.
+ */
+internal fun playAction(s: RemoteState?, queueSize: Int): PlayAction = when {
+    s == null || queueSize <= 0 -> PlayAction.NONE
+    s.playing -> PlayAction.PAUSE
+    s.stopped -> PlayAction.START
+    else -> PlayAction.RESUME
+}
+
+/**
+ * Where a stopped player starts again: the track MPD still has selected when it has one
+ * (stopped mid-queue), the top of the queue when it has none (it played to the end).
+ */
+internal fun restartIndex(s: RemoteState?, queueSize: Int): Int =
+    s?.index?.takeIf { it in 0 until queueSize } ?: 0
+
+/**
+ * Whether Next has somewhere to go: something loaded, and a track after it. MPD answers
+ * `next` with an error once stopped, and on the last track it would end the music
+ * rather than skip — both are a tap that should simply do nothing.
+ */
+internal fun canSkipNext(s: RemoteState?, queueSize: Int): Boolean =
+    s != null && !s.stopped && s.index in 0 until queueSize - 1
+
+/** Whether Previous can act: something loaded (MPD refuses it once stopped). */
+internal fun canSkipPrevious(s: RemoteState?): Boolean =
+    s != null && !s.stopped && s.index >= 0
+
+/**
+ * The status line while a command has failed: what was asked and MPD's own words, after the
+ * connection summary so that stays visible. Pure for the tests.
+ */
+internal fun commandErrorLine(what: String, message: String?, connection: String): String {
+    val reason = message?.trim()?.takeIf { it.isNotEmpty() } ?: "MPD didn't answer"
+    val line = "$what: $reason"
+    return if (connection.isBlank()) line else "$connection  ·  $line"
 }
 
 /**
