@@ -10,16 +10,13 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // Compose Multiplatform 1.12 resolves its runtime from androidx artifacts,
+        // which are published to Google's Maven repository only.
         google()
         mavenCentral()
     }
 }
 
-rootProject.name = "sendpin"
-include(":app")
-// Generates the startup/scroll baseline profile. Never built by a normal assemble —
-// see baselineprofile/build.gradle.kts for how to run it.
-include(":baselineprofile")
-// CAMusic for Linux — Compose Desktop panel for the NUC touchscreen. Local
-// testing only; shares source with :app (see linux/build.gradle.kts).
+rootProject.name = "camusic-linux"
+// CAMusic for Linux — the Compose Desktop panel for the NUC touchscreen.
 include(":linux")

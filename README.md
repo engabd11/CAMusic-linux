@@ -23,8 +23,7 @@
 
 ## What this is
 
-CAMusic for Linux is a **`linux/compose-module`** Gradle module inside this repo —
-a Compose Multiplatform Desktop app built for a 10–12" HDMI touchscreen on a
+CAMusic for Linux is a Compose Multiplatform Desktop app (the `:linux` Gradle module) built for a 10–12" HDMI touchscreen on a
 Fedora NUC (a "kiosk panel"), with exactly three jobs:
 
 | Pane | Job | Who actually does the work |
@@ -39,10 +38,9 @@ A Jellyfin session is reported alongside playback, so anything that follows
 Jellyfin sessions — HueGhost's follow mode in particular — can drive the lights
 from the panel's queue.
 
-This is a **local, personal-testing build**: no packaging, no releases, no cloud.
-It shares its Kotlin sources with the Android app in
-[`engabd11/CAMusic`](https://github.com/engabd11/CAMusic) — see
-[Relationship to CAMusic](#relationship-to-camusic).
+This is a **local, personal build**: no releases, no cloud. It began as a copy
+of the Android app [`engabd11/CAMusic`](https://github.com/engabd11/CAMusic) and
+is now developed separately — see [Origins](#origins).
 
 ## Status
 
@@ -53,7 +51,7 @@ Working and live-verified end to end on the reference panel:
 - Jellyfin `/Sessions` shows the panel's session and now-playing item while MPD plays
 - HueGhost control: status read, sync on/off toggle, mode/intensity writes, offset trim
 - Both layout modes (landscape / portrait), chosen in Settings, on a WM-less X server
-- 26 unit tests green (`:linux:test`)
+- Unit tests for the panel, the MPD and Jellyfin clients (`:linux:test`, run by CI on every push)
 
 Not yet (deliberate, by the plan): packaging/installer, auto-play after queueing
 (MPD stays paused until you tap play), quality badges on foreign queues.
@@ -137,16 +135,20 @@ playback.
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 
 # run on the panel (undecorated, pinned to (0,0), sized to the window state)
-./gradlew :linux:run --configure-on-demand
+./gradlew :linux:run
 
-# unit tests (26, pure JVM)
-./gradlew :linux:test --configure-on-demand
+# unit tests (pure JVM)
+./gradlew :linux:test
+
+# every pane drawn offscreen with a fake library → linux/build/previews/*.png
+./gradlew :linux:renderPreviews
+
+# self-contained app image (bundled JRE) under linux/build/compose/binaries/
+./gradlew :linux:packageDistributionForCurrentOS
 ```
 
-`--configure-on-demand` matters on a box without an Android SDK: the desktop
-module never configures `:app`. On a headless box, add a software renderer —
-the run task's JavaExec already sets `-Dskiko.renderApi=SOFTWARE`; on real
-hardware with a GPU you may drop it for OpenGL. On a window-manager-less X
+The run task sets `-Dskiko.renderApi=OPENGL`; on a box without a working GPU
+path, switch it to `SOFTWARE` in `linux/build.gradle.kts`. On a window-manager-less X
 server (a bare `Xorg :0`), the window self-places: undecorated, `resizable =
 false`, pinned at `(0,0)`, exact panel size — there is no WM to decorate,
 place or close it, so the app is stopped by stopping the `:run` process.
@@ -154,32 +156,21 @@ place or close it, so the app is stopped by stopping the `:run` process.
 ## Architecture
 
 ```
-app/src/main/java/com/engabd/sendpin/     ← the Android app's sources (shared FROM)
 linux/
-├── build.gradle.kts                      # syncSharedSources + deps + run tasks
-└── src/main/kotlin/
-    ├── com/engabd/sendpin/…              # shared files, synced verbatim at build time
-    ├── com/engabd/sendpin/compat/        # shallow Android shims (Context token, BackHandler no-op)
-    └── com/engabd/sendpin/linux/         # everything desktop-owned, below
+├── build.gradle.kts                      # deps, run / preview / smoke tasks, app image
+└── src/main/kotlin/com/engabd/sendpin/
+    ├── mpd/  jellyfin/  library/  ma/    # MPD + Jellyfin clients, the MusicSource seam, item models
+    ├── audio/                            # RemotePlayback, LocalTrack, StreamQuality
+    ├── ui/theme/  ui/design/             # colours, type (bundled fonts), palette, glass, seek bar
+    └── linux/                            # the panel itself, below
 ```
 
-**The sharing contract is one list.** `syncSharedSources` copies an explicit
-include list from `:app` into `build/sharedSrc` before every compile. The rule
-for what may join: *pure* Kotlin only — no `Context`, no DataStore, no
-`BuildConfig`, no mid-file `LocalContext` reads. Shared today: the theme
-package (`Color`, `Type`, `AccentTextFieldColors`), `mpd/MpdClient`,
-`MpdRemote`, `MpdArt`, `jellyfin/JellyfinClient`, `library/JellyfinSource`,
-`MusicSource`, `ServerConfig`, `ma/MaModels`, `audio/RemotePlayback`,
-`LocalTrack`, `StreamQuality`, `data/LanOnlyCleartext`. Shallow shims live in
-`compat/`. Android-deep things get desktop twins or stubs (`data/Http.kt`,
-`SubsonicStubs`) or stay unshared (`LocalFavourites`).
+The client and model packages started life in the Android app and keep its
+package names (`com.engabd.sendpin`); they are plain JVM Kotlin and are now
+maintained here. The fonts are bundled (`linux/src/main/resources/fonts`) so the
+panel looks the same on any distribution.
 
-**Two forks, both deliberate:** `ui/theme/Theme.kt` (drops the Material You
-branch and the Android motion plumbing; everything else verbatim so the look
-cannot drift) and the fonts (`AppFont` resolves to the platform default —
-Roboto on Android, Noto Sans on Fedora — so `:linux` bundles its own).
-
-**The desktop-only half** (`com/engabd/sendpin/linux/`):
+**The panel** (`com/engabd/sendpin/linux/`):
 
 | Piece | Role |
 |---|---|
@@ -195,6 +186,9 @@ Roboto on Android, Noto Sans on Fedora — so `:linux` bundles its own).
 | `JellyfinPaths.kt` | `GET /Items?Ids=…&Fields=Path,MediaSources` in one round trip |
 | `HueGhostClient.kt` | v2.8 REST: `GET /api/status`, `POST /api/on|off|set` |
 | `LinuxSettings.kt` | JSON settings at `~/.config/camusic/settings.json`, Flow per key, atomic writes |
+| `PortraitShell.kt` | Portrait layout: the now-playing cover over the tabs, mini player, bottom nav |
+| `screensaver/` | The album gallery (nothing playing) and the listening view (playing, idle) |
+| `ui/NowArt.kt`, `ui/AlbumArtStage.kt`, `ui/LivingArt.kt` | The cover held per album, the album-change transition, the living cover shader |
 
 The two-identity rule is the load-bearing detail: a queue entry's `id` stays
 the **Jellyfin item id** (what session reporting names), while
@@ -202,18 +196,15 @@ the **Jellyfin item id** (what session reporting names), while
 `MpdRemote` addresses the queue by). Stamp it the other way round and the
 track is addressed by nothing and reported against nothing.
 
-## Relationship to CAMusic
+## Origins
 
-This repository is a working tree of
-[`engabd11/CAMusic`](https://github.com/engabd11/CAMusic) (`master`) with the
-`linux/compose-module` branch added. The Android app is **untouched** except
-one mechanical move: `LocalTrack` lifted from `audio/LocalPlayer.kt` into its
-own `audio/LocalTrack.kt` file (26 same-package referrers, zero edits) so the
-desktop module can share it. Everything Linux-specific lives in `linux/`.
-
-The Android app remains where the full feature set lives — multiple providers,
-the Hue light show, ambience, Music Assistant, AirPlay, TV/Auto/webOS surfaces.
-This module is the focused desktop panel for one room.
+This repository began as a copy of
+[`engabd11/CAMusic`](https://github.com/engabd11/CAMusic), the Android app, with
+the Linux panel added as a module that borrowed the app's MPD and Jellyfin
+clients. It has since been separated: the Android app, its TV and webOS
+clients and its tooling are gone, the borrowed sources live in `linux/`, and
+the panel is developed on its own. The Android app continues in its own
+repository.
 
 ## License
 

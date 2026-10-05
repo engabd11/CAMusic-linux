@@ -8,18 +8,9 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Desktop stand-in for `data/Http.kt` — the one OkHttp client every server talks
- * through, with the same timeouts, pool and shape as :app's.
- *
- * The original cannot be shared verbatim: its User-Agent reads Android's generated
- * `BuildConfig.VERSION_NAME` and `android.os.Build.VERSION.RELEASE`, neither of
- * which exists here. Rather than shim two deep Android symbols — against the
- * plan's own rule for shims — this is the desktop twin: identical behaviour,
- * desktop identity string. `LanOnlyCleartext` *is* shared verbatim (it is pure
- * OkHttp), so the desktop client keeps the same LAN-only plaintext guard.
- *
- * If :app later lifts `BuildConfig` out of Http.kt (e.g. an injected version),
- * this file is deleted and the real one joins the shared list.
+ * The one OkHttp client every server talks through — shared timeouts and
+ * connection pool, the panel's own User-Agent, and [LanOnlyCleartext]'s guard so
+ * plain HTTP only ever goes to hosts on the local network.
  */
 object Http {
 

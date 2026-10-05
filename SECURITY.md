@@ -1,17 +1,17 @@
 # Security Policy
-CAMusic doesn not collect any info and processes everything locally on the phone/device itself.
-Sensitive info (server IP, username and passwords) are all encrypted and stored on the local device.
-The app will be updated frequently to make sure it's up to standard with any vulnerabilities that come up in the future.
 
-## Supported Versions
+CAMusic for Linux collects nothing and talks only to the servers you configure on your
+own network: MPD, Jellyfin and (optionally) HueGhost. Nothing goes to the cloud.
 
-The following app versions will be supported with fixes updates, and hopefully feature requests. Please don't install old versions.
+Connection details — server addresses, the Jellyfin API key and the HueGhost token — are
+stored in plain JSON at `~/.config/camusic/settings.json`, readable by your user account.
+Keep that file's permissions tight on a shared machine.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.12.0 and above   | :white_check_mark: |
+## Supported versions
 
+Only the latest `master` is supported.
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-Please report any issues or bugs either to issues or PR, they'll be dealt with ASAP, especially if there are any security concerns.
+Please report security issues through GitHub issues or a pull request. They are handled
+first, ahead of other work.

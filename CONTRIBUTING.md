@@ -1,111 +1,52 @@
-# Contributing to CAMusic
+# Contributing to CAMusic for Linux
 
-## Getting Started
+## Getting started
 
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/CAMusic.git`
-3. Open in Android Studio (JDK 17, compileSdk 37)
-4. Create a feature branch: `git checkout -b feat/my-feature`
+1. Fork the repository and clone your fork.
+2. Install JDK 21 or newer.
+3. Create a feature branch: `git checkout -b feat/my-feature`.
+4. Run the panel with `./gradlew :linux:run` (it reads `~/.config/camusic/settings.json`;
+   see the README for the keys).
 
-## Project Structure
+## Project structure
 
 ```
-app/src/main/
-├── cpp/                          # Native C++ Oboe output engine (compiled; opt-in, off by default)
-│   ├── CMakeLists.txt
-│   ├── sendspin_output_engine.cpp
-│   └── sendspin_output_engine.h
-├── java/com/engabd/sendpin/
-│   ├── audio/                    # Audio pipeline (ExoPlayer, Sendspin, analysis, Light Sync tap)
-│   │   ├── AudioAnalysisTap.kt
-│   │   ├── AudioOutputs.kt
-│   │   ├── DeviceCapabilities.kt
-│   │   ├── FormatNegotiator.kt
-│   │   ├── LocalPlayer.kt
-│   │   ├── LocalRadio.kt
-│   │   ├── ReplayGain.kt
-│   │   ├── SendspinAudioEngine.kt
-│   │   ├── StreamQuality.kt
-│   │   └── TrackScanner.kt / TrackScan.kt / TrackScanRepository.kt
-│   ├── data/                     # Settings, crypto, network policies
-│   │   ├── AppSettings.kt
-│   │   ├── Crypto.kt
-│   │   └── LanOnlyCleartext.kt
-│   ├── discovery/                # mDNS discovery for MA and Hue Bridge
-│   │   ├── MaDiscovery.kt
-│   │   └── PlayerIdentity.kt
-│   ├── download/                 # Download manager, offline playback
-│   │   └── DownloadManager.kt
-│   ├── ha/                       # Home Assistant client (Light Sync via syncoV2)
-│   │   ├── HaClient.kt
-│   │   └── LightSyncRepository.kt
-│   ├── hue/                     # Direct Hue Bridge (DTLS, effects engine, colour extraction)
-│   │   ├── HueBridgeClient.kt
-│   │   ├── HueDtlsClient.kt
-│   │   ├── SyncoEngine.kt
-│   │   ├── DirectLightSync.kt
-│   │   ├── AlbumColours.kt
-│   │   ├── SongPalette.kt
-│   │   └── AutoIntensityPicker.kt / SpatialWaves.kt / FireworksEffect.kt / ...
-│   ├── jellyfin/                # Jellyfin library adapter
-│   │   └── JellyfinClient.kt / JellyfinSource.kt
-│   ├── library/                 # MusicSource interface, server list, per-provider adapters
-│   │   ├── MusicSource.kt
-│   │   ├── MusicSources.kt
-│   │   ├── SubsonicSource.kt
-│   │   ├── ServerConfig.kt
-│   │   └── ScanLibrarySource.kt
-│   ├── local/                   # Local files / MediaStore source, Room download DB
-│   │   ├── LocalMediaSource.kt
-│   │   ├── DownloadMappers.kt
-│   │   └── db/
-│   ├── ma/                      # Music Assistant API client, repository, library VM
-│   │   ├── MaApiClient.kt
-│   │   ├── MaRepository.kt
-│   │   ├── MaModels.kt / DspModels.kt
-│   │   └── LibraryViewModel.kt
-│   ├── protocol/                # Sendspin WebSocket protocol (messages, clock, formats)
-│   │   ├── SendspinClient.kt
-│   │   ├── ClockSync.kt / ClockKalmanFilter.kt / MonotonicClock.kt
-│   │   ├── Messages.kt / Inbound.kt
-│   │   └── AudioFormatSpec.kt
-│   ├── service/                 # Foreground service, media sessions, notifications
-│   └── ui/                      # Jetpack Compose UI (Material 3, OLED theme)
-│       ├── App.kt
-│       ├── screens/
-│       │   ├── NowPlayingScreen.kt
-│       │   ├── LibraryScreen.kt
-│       │   ├── SpeakersScreen.kt
-│       │   ├── LightSyncScreen.kt
-│       │   ├── SettingsScreen.kt
-│       │   ├── OnboardingWizard.kt
-│       │   └── settings/LibrariesSettings.kt
-│       ├── viewmodel/
-│       └── theme/
+linux/
+├── build.gradle.kts            # dependencies, run / preview / smoke tasks, app image
+└── src/
+    ├── main/kotlin/com/engabd/sendpin/
+    │   ├── mpd/ jellyfin/      # the MPD and Jellyfin clients
+    │   ├── library/ ma/        # the MusicSource seam and item models
+    │   ├── audio/              # RemotePlayback, LocalTrack, StreamQuality
+    │   ├── ui/theme/ ui/design/  # colours, bundled type, palette, glass, seek bar
+    │   └── linux/              # the panel: shells, panes, settings, screensaver, listening view
+    ├── main/resources/         # bundled fonts and the window icon
+    └── test/kotlin/            # unit tests, plus preview/RenderPreviews.kt
 ```
 
-## Code Conventions
+## Code conventions
 
-- **Kotlin:** Follow the [Google Kotlin Style Guide](https://developer.android.com/kotlin/style-guide)
-- **C++:** Google C++ style (enforced by Android Studio defaults)
-- **Commit messages:** [Conventional Commits](https://www.conventionalcommits.org/) — `feat:`, `fix:`, `refactor:`, `docs:`, `release:`
-- **PRs:** against the `master` branch
+- **Kotlin:** official style (`kotlin.code.style=official`); match the surrounding code's
+  comment density and naming.
+- **Commit messages:** `linux: <what changed>` in the existing history's style.
+- **Looks are options:** anything that changes how the panel looks or moves is a setting
+  in `LinuxSettings` with a switch in `SettingsPane`, so it can be turned off.
+- **Playback stays MPD's:** the panel is a remote; it never decodes audio.
 
 ## Testing
 
-- **Unit tests:** `app/src/test/` (JUnit, kotlin-test, coroutines-test; no mocking library) — about 1,600 tests across ~170 classes
-- **Instrumented tests:** `app/src/androidTest/` (AndroidX Test)
-- **NDK and CMake are required** — the native Oboe output engine in `app/src/main/cpp/` is part of the build
-- **Run:** `./gradlew :app:testMobileDebugUnitTest` or `./gradlew :app:connectedMobileDebugAndroidTest`
-- **Flavors:** `:app` builds `mobile` and `tv`. CI runs the unit tests against both — `./gradlew :app:testTvDebugUnitTest` as well, before pushing
+- **Unit tests:** `./gradlew :linux:test` (kotlin-test, coroutines-test; no mocking library).
+  Keep decisions in pure functions so they can be tested without a screen.
+- **Previews:** `./gradlew :linux:renderPreviews` draws every pane with a fake library into
+  `linux/build/previews/*.png`. CI uploads them as an artifact on every push.
 
-## Pull Requests
+## Pull requests
 
-1. Ensure your code compiles: `./gradlew assembleMobileDebug assembleTvDebug`
-2. Add tests for new functionality
-3. Update documentation if needed
-4. Open a PR against the `master` branch
+1. Make sure `./gradlew :linux:test` passes.
+2. Add tests for new logic, and a preview for a new screen.
+3. Update the README if you add a setting.
+4. Open the PR against `master`.
 
 ## Questions?
 
-Open an issue or discussion on GitHub.
+Open an issue or a discussion on GitHub.
