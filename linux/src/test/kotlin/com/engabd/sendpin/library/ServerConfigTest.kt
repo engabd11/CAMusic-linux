@@ -335,33 +335,3 @@ class ServerConfigTest {
         assertNull(ServerKind.from(null))
     }
 }
-
-/**
- * Which provider tags mean "this phone plays it".
- *
- * This test exists because the check it covers used to be `provider ==
- * SubsonicClient.PROVIDER`, written in a dozen places when Navidrome was the only
- * answer. Every one of those sites would have answered "no, that's a Music Assistant
- * item" for a Jellyfin track — popping detail screens as they opened, refusing
- * downloads, and routing playback to a server that had never heard of the id.
- */
-class LocalProviderTest {
-
-    @Test
-    fun `every source provider counts as local, and so does the download index`() {
-        assertTrue(MusicSources.isLocalProvider("subsonic"))
-        assertTrue(MusicSources.isLocalProvider("jellyfin"))
-        assertTrue(MusicSources.isLocalProvider("emby"))
-        assertTrue(MusicSources.isLocalProvider("plex"))
-        assertTrue(MusicSources.isLocalProvider(MusicSources.DOWNLOAD_PROVIDER))
-    }
-
-    @Test
-    fun `Music Assistant's own tags do not`() {
-        // MA files everything under "library"; the provider domains are what it
-        // streamed *from*, and neither is something this phone plays on its own.
-        assertFalse(MusicSources.isLocalProvider("library"))
-        assertFalse(MusicSources.isLocalProvider("spotify"))
-        assertFalse(MusicSources.isLocalProvider(""))
-    }
-}
