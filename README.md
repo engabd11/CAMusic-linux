@@ -53,12 +53,27 @@ Working and live-verified end to end on the reference panel:
 - Both layout modes (landscape / portrait), chosen in Settings, on a WM-less X server
 - Unit tests for the panel, the MPD and Jellyfin clients (`:linux:test`, run by CI on every push)
 
-Not yet (deliberate, by the plan): packaging/installer, auto-play after queueing
-(MPD stays paused until you tap play), quality badges on foreign queues.
+Not yet: auto-play after queueing (MPD stays paused until you tap play), quality
+badges on foreign queues.
+
+## Install
+
+Download the latest `CAMusic-linux-<version>-x86_64.tar.gz` from
+[Releases](https://github.com/engabd11/CAMusic-linux/releases). It carries its own
+Java runtime, so nothing else is needed:
+
+```bash
+tar -xzf CAMusic-linux-<version>-x86_64.tar.gz
+cd CAMusic-linux-<version>-x86_64
+sudo ./install.sh            # → /opt/camusic-linux, a menu entry and the `camusic` command
+```
+
+`sudo ./install.sh --remove` takes it out again. A plain jar
+(`java -jar CAMusic-linux-<version>.jar`, JDK 21+) is attached to each release too.
 
 ## Requirements
 
-- **JDK 21+** (Kotlin JVM module; do not pin `jvmTarget` — let it follow the JDK)
+- **JDK 21+** to build or to run the plain jar (the release tarball bundles its own runtime)
 - **MPD** reachable at a `host:port` (default `127.0.0.1:6600`)
 - **Jellyfin** server with an **API key** (Dashboard → API Keys) and a music
   library whose file location MPD also mounts
@@ -120,7 +135,7 @@ playback.
 |---|---|---|
 | `art_hold_album` | `true` | Holds one cover for the whole album. Jellyfin names embedded art per *track*, so without this every skip reloaded the cover, wash and palette (the flash on skip). |
 | `album_transition` | `flip` | `flip` \| `dissolve` \| `slide` \| `off` — how the cover changes when a **new album** starts. A skip inside one album never moves it. |
-| `living_art` | `subtle` | `off` \| `subtle` \| `vivid` — from `living_art_delay_s` (default 10 s) into each track, the cover comes quietly alive: an SkSL flow field drifts soft texture (water, sky, smoke) while hard edges such as type stay still, light glints on the highlights, and the print breathes. Pausing settles it. |
+| `living_art` | `subtle` | `off` \| `subtle` \| `vivid` — living colours: from `living_art_delay_s` (default 10 s) into each track, the album's colour bleed behind the player (and in Listening mode) flows like a liquid mixture of the record's colours, gathering speed as it wakes and settling when paused. The cover itself stays still. Off brings back the soft blooms. |
 | `track_text_motion` | `true` | Title and artist glide over on a track change. |
 | `ambient_motion` | `true` | The album's colour blooms drift slowly behind the player and pages. |
 | `cover_rests_on_pause` | `true` | Paused, the cover settles back slightly and dims. |
@@ -146,6 +161,10 @@ export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 # self-contained app image (bundled JRE) under linux/build/compose/binaries/
 ./gradlew :linux:packageDistributionForCurrentOS
 ```
+
+**Releasing:** push a tag such as `v1.0.1` (or run the *Release* workflow by hand). The
+workflow tests, packages the app image and the jar, and publishes them on the GitHub
+release, with notes from `docs/release-notes/<tag>.md` when that file exists.
 
 The run task sets `-Dskiko.renderApi=OPENGL`; on a box without a working GPU
 path, switch it to `SOFTWARE` in `linux/build.gradle.kts`. On a window-manager-less X
@@ -188,7 +207,8 @@ panel looks the same on any distribution.
 | `LinuxSettings.kt` | JSON settings at `~/.config/camusic/settings.json`, Flow per key, atomic writes |
 | `PortraitShell.kt` | Portrait layout: the now-playing cover over the tabs, mini player, bottom nav |
 | `screensaver/` | The album gallery (nothing playing) and the listening view (playing, idle) |
-| `ui/NowArt.kt`, `ui/AlbumArtStage.kt`, `ui/LivingArt.kt` | The cover held per album, the album-change transition, the living cover shader |
+| `ui/NowArt.kt`, `ui/AlbumArtStage.kt` | The cover held per album, the album-change transition |
+| `ui/LivingArt.kt`, `ui/LiquidBleed.kt` | When the living colours flow, and the SkSL liquid that draws them |
 
 The two-identity rule is the load-bearing detail: a queue entry's `id` stays
 the **Jellyfin item id** (what session reporting names), while

@@ -45,7 +45,7 @@ linux/
 1. Make sure `./gradlew :linux:test` passes.
 2. Add tests for new logic, and a preview for a new screen.
 3. Update the README if you add a setting.
-4. Open the PR against `master`.
+4. Open the PR against `linux/compose-module`.
 
 ## Questions?
 

@@ -38,7 +38,6 @@ import kotlinx.coroutines.launch
 import com.engabd.sendpin.linux.ui.AlbumArtStage
 import com.engabd.sendpin.linux.ui.ArtTransition
 import com.engabd.sendpin.linux.ui.LocalNowArt
-import com.engabd.sendpin.linux.ui.rememberLivingArt
 import com.engabd.sendpin.ui.design.glassSurface
 import com.engabd.sendpin.ui.theme.AppFont
 import com.engabd.sendpin.ui.theme.Glass
@@ -88,7 +87,7 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             val nowArt = LocalNowArt.current
             if (track != null || nowArt.url != null) {
                 // The same stage as the portrait cover: still through an album, turned
-                // over on a new one, alive a little way into each track. Square-cropped,
+                // over on a new one. Square-cropped,
                 // inside the glass card (no glow of its own — the card is its frame).
                 val transition by model.settings.albumTransition.collectAsState(initial = ArtTransition.FLIP)
                 AlbumArtStage(
@@ -98,7 +97,6 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
                     glow = com.engabd.sendpin.ui.design.rememberAccent(),
                     shape = RoundedCornerShape(28.dp),
                     glowElevation = 0.dp,
-                    living = rememberLivingArt(model),
                     contentDescription = track?.album ?: track?.title,
                 )
             } else {

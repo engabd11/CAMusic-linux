@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.engabd.sendpin.linux.ui.LocalNowArt
 import com.engabd.sendpin.linux.ui.PaneAmbience
+import com.engabd.sendpin.linux.ui.rememberLivingArt
 import com.engabd.sendpin.linux.ui.rememberNowArt
 import com.engabd.sendpin.ui.design.LocalAccent
 import com.engabd.sendpin.ui.design.LocalPalette
@@ -133,7 +134,12 @@ private fun LandscapeShell(
         LocalNowArt provides nowArt,
     ) {
         Box(Modifier.fillMaxSize()) {
-            PaneAmbience(art, palette, drift = ambientMotion && !obscured)
+            PaneAmbience(
+                art, palette,
+                drift = ambientMotion && !obscured,
+                living = rememberLivingArt(model),
+                seed = nowArt.key.hashCode(),
+            )
             Row(Modifier.fillMaxSize()) {
                 PlayerPane(Modifier.weight(PLAYER_WEIGHT_WIDE).fillMaxHeight(), model)
                 Box(Modifier.fillMaxHeight().width(1.dp).background(Hairline))

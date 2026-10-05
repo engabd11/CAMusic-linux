@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=CAMusic
+GenericName=Music panel
+Comment=Touchscreen panel for MPD and Jellyfin
+Exec=@PREFIX@/bin/CAMusic
+Icon=@PREFIX@/camusic.png
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupWMClass=com-engabd-sendpin-linux-MainKt
