@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.engabd.sendpin.linux.PanelModel
+import com.engabd.sendpin.ui.design.LocalColourMood
 import com.engabd.sendpin.ui.theme.AppFont
 import com.engabd.sendpin.ui.theme.DisplayFonts
 import kotlinx.coroutines.delay
@@ -161,9 +162,10 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
     // IdleGate.PREWARM_MS early so the first slide is ready, and is dropped (with its
     // bitmaps) once the panel is in use again.
     val active = warm || showing
-    val feed = remember(source, albums, style, active) {
+    val mood = LocalColourMood.current
+    val feed = remember(source, albums, style, active, mood) {
         val src = source
-        if (!active || src == null) null else SlideFeed(src, albums, style, meta = { ids ->
+        if (!active || src == null) null else SlideFeed(src, albums, style, mood = mood, meta = { ids ->
             SlideMetaClient.fetch(
                 metaHttp,
                 model.jfUrl.value,

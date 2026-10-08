@@ -46,4 +46,13 @@ class LivingArtTest {
         // never fully opaque: the album's wash and the words keep showing through
         assertTrue(vivid.alpha < 1f)
     }
+
+    @Test
+    fun `every liquid style compiles, and an unknown key is the marble`() {
+        for (style in LiquidStyle.entries) {
+            kotlin.test.assertTrue(LiquidShader.compiles(style), "${style.key} must compile")
+        }
+        kotlin.test.assertEquals(LiquidStyle.MARBLE, LiquidStyle.from("nope"))
+        kotlin.test.assertEquals(LiquidStyle.LAVA, LiquidStyle.from("lava"))
+    }
 }

@@ -65,6 +65,40 @@ class LinuxSettingsTest {
     }
 
     @Test
+    fun `colour and finish options default to the plain look and round-trip`() = runTest {
+        val (settings, path) = tempSettings()
+        assertEquals("natural", settings.colourMood.first())
+        assertEquals("marble", settings.livingStyle.first())
+        assertEquals("classic", settings.listeningLayout.first())
+        assertEquals("off", settings.vignette.first())
+        assertEquals("off", settings.filmGrain.first())
+        assertEquals("off", settings.nightMode.first())
+        assertEquals(22, settings.nightStartH.first())
+        assertEquals(7, settings.nightEndH.first())
+        assertEquals("gentle", settings.nightDepth.first())
+
+        settings.setColourMood("warm")
+        settings.setLivingStyle("aurora")
+        settings.setListeningLayout("vinyl")
+        settings.setVignette("soft")
+        settings.setFilmGrain("fine")
+        settings.setNightMode("scheduled")
+        settings.setNightStartH(23)
+        settings.setNightEndH(6)
+        settings.setNightDepth("deep")
+        val reloaded = LinuxSettings(path)
+        assertEquals("warm", reloaded.colourMood.first())
+        assertEquals("aurora", reloaded.livingStyle.first())
+        assertEquals("vinyl", reloaded.listeningLayout.first())
+        assertEquals("soft", reloaded.vignette.first())
+        assertEquals("fine", reloaded.filmGrain.first())
+        assertEquals("scheduled", reloaded.nightMode.first())
+        assertEquals(23, reloaded.nightStartH.first())
+        assertEquals(6, reloaded.nightEndH.first())
+        assertEquals("deep", reloaded.nightDepth.first())
+    }
+
+    @Test
     fun `set persists to disk and a fresh instance reads it back`() = runTest {
         val (settings, path) = tempSettings()
         settings.setMpdAddress("192.168.0.202:6600")

@@ -2,11 +2,14 @@ package com.engabd.sendpin.linux
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.engabd.sendpin.linux.screensaver.IdleGate
+import com.engabd.sendpin.linux.ui.LiquidStyle
+import com.engabd.sendpin.linux.ui.LocalLiquidStyle
 import com.engabd.sendpin.linux.screensaver.ListeningHost
 import com.engabd.sendpin.linux.screensaver.ScreensaverHost
 import androidx.compose.runtime.collectAsState
@@ -21,6 +24,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.engabd.sendpin.ui.design.ColourMood
+import com.engabd.sendpin.ui.design.LocalColourMood
 import com.engabd.sendpin.ui.theme.AccentChoice
 import com.engabd.sendpin.ui.theme.SendspinTheme
 import com.engabd.sendpin.ui.theme.ThemeChoice
@@ -70,6 +75,8 @@ fun main() = application {
     val fixed by settings.accentFixed.collectAsState(initial = 0xFF8AB4F8.toInt())
     val theme by settings.themeChoice.collectAsState(initial = "dark")
     val glassBlur by settings.glassBlur.collectAsState(initial = true)
+    val mood by settings.colourMood.collectAsState(initial = "natural")
+    val liquid by settings.livingStyle.collectAsState(initial = "marble")
 
     // The screensaver's idle clock, fed by every touch and key below.
     val idle = remember { IdleGate() }
@@ -97,6 +104,12 @@ fun main() = application {
             seedAccent = Color(fixed),
             glassBlur = glassBlur,
         ) {
+          // Every album palette below is graded in this mood (rememberAlbumPalette), and
+          // every living-colour room flows in this style (AlbumBleed).
+          CompositionLocalProvider(
+              LocalColourMood provides ColourMood.from(mood),
+              LocalLiquidStyle provides LiquidStyle.from(liquid),
+          ) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -120,6 +133,7 @@ fun main() = application {
                 // While nothing plays: the album gallery.
                 ScreensaverHost(model, idle)
             }
+          }
         }
     }
 }
