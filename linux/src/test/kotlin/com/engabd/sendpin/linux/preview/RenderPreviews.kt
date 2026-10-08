@@ -216,7 +216,7 @@ private fun renderAll(args: Array<String>) {
 
     // The looks: the colour moods, the liquid styles, the listening layouts and the
     // finish — each through Looked, which provides them the way Main.kt does.
-    fun looked(name: String, width: Int, height: Int, frames: Int = 120, setup: suspend LinuxSettings.() -> Unit, content: @Composable (PanelModel) -> Unit) {
+    fun looked(name: String, width: Int, height: Int, frames: Int = 90, setup: suspend LinuxSettings.() -> Unit, content: @Composable (PanelModel) -> Unit) {
         val m = freshModel()
         runBlocking { m.settings.setup() }
         render(File(out, "$name.png"), width, height, frames = frames) {
@@ -232,7 +232,8 @@ private fun renderAll(args: Array<String>) {
     for (style in LiquidStyle.entries) {
         // The listening room in landscape, where most of the screen is the liquid, past
         // the living-colour mark so it is up and flowing.
-        looked("33-liquid-${style.key}", 1280, 800, frames = 320, setup = {
+        // Smaller and shorter than the rest: each frame runs the shader on CI's CPU.
+        looked("33-liquid-${style.key}", 960, 600, frames = 160, setup = {
             setLivingArt("vivid"); setLivingArtDelayS(5); setLivingStyle(style.key)
         }) { m ->
             m.listeningNow.value = true
