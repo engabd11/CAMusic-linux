@@ -2,6 +2,8 @@ package com.engabd.sendpin.ui.design
 
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import kotlin.math.abs
 
 /**
@@ -30,7 +32,7 @@ val LocalColourMood = compositionLocalOf { ColourMood.NATURAL }
 private const val WARM_HUE = 62f
 private const val COOL_HUE = 235f
 /** How far Warm and Cool pull a hue toward theirs (0 none, 1 all the way). */
-private const val PULL = 0.6f
+private const val PULL = 0.85f
 /** Below this chroma a colour reads as grey; Warm and Cool tint it rather than turn it. */
 private const val GREY_C = 0.03f
 private const val TINT_C = 0.035f
@@ -83,4 +85,27 @@ internal fun pullHue(h: Float, target: Float, t: Float): Float {
 internal fun hueGap(a: Float, b: Float): Float {
     val d = abs(a - b) % 360f
     return if (d > 180f) 360f - d else d
+}
+
+/**
+ * The filter for the album wash (the blurred cover behind the player) in [mood]: the
+ * wash's own over-saturation of [saturation], then the mood's tint per channel — so the
+ * room takes the mood too, not only the colours drawn from the palette. Mono tints a
+ * grey wash in [lead], the palette's accent.
+ */
+fun washFilter(mood: ColourMood, saturation: Float, lead: Color): ColorFilter {
+    val (sat, tint) = when (mood) {
+        ColourMood.NATURAL -> saturation to floatArrayOf(1f, 1f, 1f)
+        ColourMood.WARM -> saturation * 0.8f to floatArrayOf(1.1f, 0.86f, 0.58f)
+        ColourMood.COOL -> saturation * 0.8f to floatArrayOf(0.68f, 0.88f, 1.12f)
+        ColourMood.MONO -> 0f to lead.let { c ->
+            val top = maxOf(c.red, c.green, c.blue, 0.001f)
+            floatArrayOf(c.red / top, c.green / top, c.blue / top)
+        }
+        ColourMood.NEON -> saturation * 1.35f to floatArrayOf(1f, 1f, 1f)
+    }
+    val values = ColorMatrix().apply { setToSaturation(sat) }.values.copyOf()
+    // Each output channel's row scaled by its tint: the tint applied after the saturation.
+    for (row in 0 until 3) for (col in 0 until 5) values[row * 5 + col] *= tint[row]
+    return ColorFilter.colorMatrix(ColorMatrix(values))
 }

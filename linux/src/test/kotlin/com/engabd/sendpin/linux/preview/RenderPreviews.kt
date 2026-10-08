@@ -230,8 +230,14 @@ private fun renderAll(args: Array<String>) {
         looked("29-mood-${mood.key}", 800, 1280, setup = { setLivingArt("off"); setColourMood(mood.key) }, content = nowPlaying)
     }
     for (style in LiquidStyle.entries) {
-        // Past the living-colour mark, so the liquid is up and flowing.
-        looked("33-liquid-${style.key}", 800, 1280, frames = 320, setup = { setLivingArt("vivid"); setLivingArtDelayS(5); setLivingStyle(style.key) }, content = nowPlaying)
+        // The listening room in landscape, where most of the screen is the liquid, past
+        // the living-colour mark so it is up and flowing.
+        looked("33-liquid-${style.key}", 1280, 800, frames = 320, setup = {
+            setLivingArt("vivid"); setLivingArtDelayS(5); setLivingStyle(style.key)
+        }) { m ->
+            m.listeningNow.value = true
+            ListeningHost(m, remember { IdleGate() })
+        }
     }
     for ((layout, w, h) in listOf(
         Triple("vinyl", 800, 1280), Triple("vinyl", 1280, 800),

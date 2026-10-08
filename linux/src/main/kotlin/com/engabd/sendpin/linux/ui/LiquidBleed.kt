@@ -174,19 +174,23 @@ half4 settle(float2 coord, float3 col, float cover) {
 /** Value noise, for the styles that want softness rather than waves. */
 private const val NOISE = """
 float hash(float2 p) {
-    return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453);
+    // No sine: steady at large coordinates and on half-precision GPUs.
+    float3 p3 = fract(float3(p.x, p.y, p.x) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
 }
 float noise(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
-    float2 u = f * f * (3.0 - 2.0 * f);
+    // Quintic fade: no lattice showing through the smoke.
+    float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     return mix(mix(hash(i), hash(i + float2(1.0, 0.0)), u.x),
                mix(hash(i + float2(0.0, 1.0)), hash(i + float2(1.0, 1.0)), u.x), u.y);
 }
 float fbm(float2 p) {
     float v = 0.0;
     float a = 0.5;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 4; i++) {
         v += a * noise(p);
         p = p * 2.03 + float2(1.7, 9.2);
         a *= 0.5;
@@ -293,15 +297,16 @@ half4 main(float2 coord) {
         float fi = float(i);
         float x = aspect * (0.5 + 0.38 * sin(t * (0.4 + 0.07 * fi) + fi * 2.4));
         float y = 1.35 - mod(t * (0.10 + 0.025 * fi) + fi * 0.29, 1.7);
-        float r = (0.10 + 0.03 * sin(fi * 1.9)) * (0.7 + 0.3 * warp) * (3.0 / scale + 0.2);
-        float2 d = uv - float2(x, y);
+        float r = (0.17 + 0.05 * sin(fi * 1.9)) * (0.7 + 0.3 * warp) * (3.0 / scale + 0.2);
+        // taller than wide, as warm wax is, so neighbours reach each other and merge
+        float2 d = (uv - float2(x, y)) * float2(1.0, 0.72);
         float f = r * r / max(dot(d, d), 0.00001);
         field += f;
         col += tone(fi) * f;
     }
     col /= max(field, 0.0001);
     // a soft-edged body — the wax — with a gentle glow around it
-    float body = smoothstep(0.55, 0.55 + 1.0 / sharp, field);
+    float body = smoothstep(0.85, 0.85 + 1.2 / sharp, field);
     float glow = clamp(field * 0.35, 0.0, 0.4);
     col *= 0.8 + 0.25 * body;
     return settle(coord, col, max(body, glow));

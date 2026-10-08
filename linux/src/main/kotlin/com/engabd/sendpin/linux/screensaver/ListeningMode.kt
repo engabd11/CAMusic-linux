@@ -239,9 +239,9 @@ private fun ListeningView(
                     .padding(top = 40.dp, bottom = maxHeight * 0.08f)
                     .offset { driftOffset() },
             ) {
-                cover(Modifier.size(if (landscape) h * 0.22f else w * 0.3f))
+                cover(Modifier.size(if (landscape) h * 0.26f else w * 0.44f))
                 Spacer(Modifier.weight(1f))
-                TrackWords(model, track, TextAlign.Start, titleMaxSp = if (landscape) 150f else 112f)
+                TrackWords(model, track, TextAlign.Start, titleMaxSp = 150f)
             }
 
             landscape -> Row(
