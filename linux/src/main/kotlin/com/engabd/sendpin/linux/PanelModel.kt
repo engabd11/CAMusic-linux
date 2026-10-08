@@ -301,43 +301,57 @@ class PanelModel(val settings: LinuxSettings) {
 
     // Each wakes the poll once MPD has taken it, so the screen and the Jellyfin
     // report follow at once even if the idle push is down. None of them throws: see
-    // [guarded] — a refused command used to take the whole panel down.
-    suspend fun playAt(index: Int) = transport("Play") { playAt(index) }
+    // [guarded] — a refused command used to take the whole panel down. They run one at a
+    // time ([transportLock]), so a quick double tap is two commands in order, each
+    // deciding from what the one before it left.
+    suspend fun playAt(index: Int) = transportLock.withLock { send("Play") { playAt(index) } }
 
     /**
      * Play / pause. A stopped player — the queue played to its end, or nothing was
      * started — is *started* again: MPD's `pause 0` does nothing once stopped, so the
      * play button used to do nothing there either. See [playAction].
+     *
+     * Decided from MPD's own answer, read now, not from the last poll: a reading up to a
+     * second old (or none at all, after one dropped `status`) could make a tap on pause do
+     * nothing. The answer is then shown at once, so the button turns over under the thumb
+     * and a second tap reads the new state; the poll the command wakes confirms it.
      */
     suspend fun togglePause() {
-        val s = state.value
-        val size = queue.value.size
-        when (playAction(s, size)) {
-            PlayAction.PAUSE -> transport("Pause") { pause() }
-            PlayAction.RESUME -> transport("Play") { resume() }
-            PlayAction.START -> transport("Play") { playAt(restartIndex(s, size)) }
-            PlayAction.NONE -> Unit
+        transportLock.withLock {
+            val s = remote?.poll() ?: state.value
+            val size = queue.value.size
+            when (playAction(s, size)) {
+                PlayAction.PAUSE -> if (send("Pause") { pause() }) state.value = s?.copy(playing = false)
+                PlayAction.RESUME -> if (send("Play") { resume() }) state.value = s?.copy(playing = true)
+                PlayAction.START -> send("Play") { playAt(restartIndex(s, size)) }
+                PlayAction.NONE -> Unit
+            }
         }
     }
 
     /** Next track — nothing to do (rather than an error from MPD) when there is no next. */
-    suspend fun next() {
-        if (canSkipNext(state.value, queue.value.size)) transport("Next") { next() }
+    suspend fun next() = transportLock.withLock {
+        if (canSkipNext(state.value, queue.value.size)) send("Next") { next() }
     }
 
     /** Previous track (or the start of this one, as MPD does) — only while something is loaded. */
-    suspend fun previous() {
-        if (canSkipPrevious(state.value)) transport("Previous") { previous() }
+    suspend fun previous() = transportLock.withLock {
+        if (canSkipPrevious(state.value)) send("Previous") { previous() }
     }
 
-    suspend fun seekTo(ms: Long) {
-        if (state.value?.stopped == false) transport("Seek") { seekTo(ms) }
+    suspend fun seekTo(ms: Long) = transportLock.withLock {
+        if (state.value?.stopped == false) send("Seek") { seekTo(ms) }
     }
 
-    private suspend fun transport(what: String, command: suspend MpdRemote.() -> Unit) {
-        val r = remote ?: return
-        guarded(what) { r.command() }
+    /** One transport command at a time — see the note above [playAt]. */
+    private val transportLock = Mutex()
+
+    /** Sends [command] through [guarded] and wakes the poll; true when MPD took it. */
+    private suspend fun send(what: String, command: suspend MpdRemote.() -> Unit): Boolean {
+        val r = remote ?: return false
+        val ok = guarded(what) { r.command() }
         wake.trySend(Unit)
+        return ok
     }
 
     /** The connection summary [start] built — what [statusLine] returns to after an error clears. */
@@ -355,19 +369,21 @@ class PanelModel(val settings: LinuxSettings) {
      * into the button's coroutine and crash the app; now the status line says what MPD said
      * and the panel carries on. The next command that succeeds clears it again.
      */
-    private suspend fun guarded(what: String, block: suspend () -> Unit) {
-        try {
+    private suspend fun guarded(what: String, block: suspend () -> Unit): Boolean {
+        return try {
             block()
             // Clear only our own error line — a hint the command itself wrote
             // ("check the path prefix…") must stay up.
             if (shownError != null && statusLine.value == shownError) statusLine.value = connectionLine
             shownError = null
+            true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             val line = commandErrorLine(what, e.message, connectionLine)
             shownError = line
             statusLine.value = line
+            false
         }
     }
 

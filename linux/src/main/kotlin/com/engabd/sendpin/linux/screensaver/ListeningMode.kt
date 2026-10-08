@@ -3,6 +3,7 @@ package com.engabd.sendpin.linux.screensaver
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -111,17 +112,26 @@ fun ListeningHost(model: PanelModel, gate: IdleGate) {
         gate.touch()
     }
 
+    // The view takes touches only once it is fully up (overlayCaptures). It used to take
+    // them for as long as it was drawn: the tap after the one that woke it landed in the
+    // fade-out and was swallowed, so pause took two or three goes. While it fades in, a tap
+    // goes through to the controls the eye still sees, and the view steps aside.
+    val visibility = remember { MutableTransitionState(false) }
+    visibility.targetState = showing
+    val captures = overlayCaptures(visibility)
+    StepAsideOnPress(gate, showing, captures, onStepAside = ::dismiss)
+
     AnimatedVisibility(
-        visible = showing,
+        visibleState = visibility,
         enter = fadeIn(tween(1_600)),
         exit = fadeOut(tween(600)),
     ) {
-        ListeningView(model, clock = clock, drift = drift, onTap = ::dismiss)
+        ListeningView(model, clock = clock, drift = drift, captures = captures, onTap = ::dismiss)
     }
 }
 
 @Composable
-private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onTap: () -> Unit) {
+private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, captures: Boolean, onTap: () -> Unit) {
     val remote by model.state.collectAsState()
     val queue by model.queue.collectAsState()
     val transition by model.settings.albumTransition.collectAsState(initial = ArtTransition.FLIP)
@@ -142,7 +152,10 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onTap() }) },
+            .then(
+                if (!captures) Modifier
+                else Modifier.pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onTap() }) },
+            ),
     ) {
         RoomLight(palette, living, seed = nowArt.key.hashCode()) { age.value }
         // Read once here: inside the Row and Column below, the box's own scope is not

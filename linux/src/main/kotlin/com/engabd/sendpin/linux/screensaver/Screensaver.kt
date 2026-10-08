@@ -2,6 +2,7 @@ package com.engabd.sendpin.linux.screensaver
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -180,8 +181,16 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
         gate.touch()
     }
 
+    // Touches are the gallery's only once it is fully up (overlayCaptures): while it fades
+    // in they reach the pane underneath and end it, and while it fades out they already
+    // reach the pane.
+    val visibility = remember { MutableTransitionState(false) }
+    visibility.targetState = showing
+    val captures = overlayCaptures(visibility)
+    StepAsideOnPress(gate, showing, captures, onStepAside = ::dismiss)
+
     AnimatedVisibility(
-        visible = showing,
+        visibleState = visibility,
         enter = fadeIn(tween(1_400)),
         exit = fadeOut(tween(600)),
     ) {
@@ -190,6 +199,7 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
             style = style,
             slideMs = slideS.coerceAtLeast(5) * 1_000,
             extras = Extras(clock, details, holdToPlay, drift, albumText, textScaleOf(textSize), clockPosition),
+            captures = captures,
             onTap = ::dismiss,
             onHold = { id ->
                 scope.launch { model.playAlbumById(id) }
@@ -210,6 +220,7 @@ private fun Gallery(
     style: String,
     slideMs: Int,
     extras: Extras,
+    captures: Boolean,
     onTap: () -> Unit,
     onHold: (String) -> Unit,
 ) {
@@ -241,15 +252,18 @@ private fun Gallery(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { onTap() },
-                    onLongPress = {
-                        val id = currentId
-                        if (holdToPlay && id != null) onHold(id) else onTap()
-                    },
-                )
-            },
+            .then(
+                if (!captures) Modifier
+                else Modifier.pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { onTap() },
+                        onLongPress = {
+                            val id = currentId
+                            if (holdToPlay && id != null) onHold(id) else onTap()
+                        },
+                    )
+                },
+            ),
     ) {
         for (layer in layers) key(layer.serial) {
             SlideLayer(layer.slide, layer.leaving, style, slideMs, extras, driftOffset)

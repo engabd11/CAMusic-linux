@@ -101,12 +101,15 @@ fun main() = application {
                 Modifier
                     .fillMaxSize()
                     // Every touch, anywhere, restarts the screensaver's clock. The Initial
-                    // pass sees it before any pane does, and nothing is consumed.
+                    // pass sees it before any pane does, and nothing is consumed. A finger
+                    // going down is also a press, which a view still fading in steps
+                    // aside for (IdleGate.lastPress).
                     .pointerInput(Unit) {
                         awaitPointerEventScope {
                             while (true) {
-                                awaitPointerEvent(PointerEventPass.Initial)
-                                idle.touch()
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                if (event.changes.any { it.pressed && !it.previousPressed }) idle.press()
+                                else idle.touch()
                             }
                         }
                     },
