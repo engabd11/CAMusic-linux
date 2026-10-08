@@ -492,7 +492,9 @@ fun rememberAlbumPalette(url: String?): AlbumPalette {
         }
         if (palette != null) published = palette
     }
-    return published
+    // Graded here, so every room the palette lights takes Settings' colour mood.
+    val mood = LocalColourMood.current
+    return remember(published, mood) { published.graded(mood) }
 }
 
 /**

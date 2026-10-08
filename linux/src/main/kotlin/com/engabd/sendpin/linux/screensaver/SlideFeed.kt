@@ -6,6 +6,8 @@ import com.engabd.sendpin.library.MusicSource
 import com.engabd.sendpin.linux.JellyfinPaths
 import com.engabd.sendpin.ma.MaItem
 import com.engabd.sendpin.ui.design.AlbumPalette
+import com.engabd.sendpin.ui.design.ColourMood
+import com.engabd.sendpin.ui.design.graded
 import com.engabd.sendpin.ui.design.paletteOfImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -142,6 +144,8 @@ class SlideFeed(
     /** `gallery` | `kenburns` — decides which pictures are worth fetching. */
     private val style: String,
     private val meta: suspend (List<String>) -> Map<String, SlideMeta>,
+    /** Settings' colour mood, graded into each slide's palette as it is prepared. */
+    private val mood: ColourMood = ColourMood.NATURAL,
     private val http: OkHttpClient = defaultHttp,
 ) {
     private val deck = SlideDeck()
@@ -205,7 +209,7 @@ class SlideFeed(
                 backdrop = if (style == "kenburns") m?.backdropUrl?.let(::fetchBitmap) else null,
                 logo = m?.logoUrl?.let(::fetchBitmap),
                 artistLogo = m?.artistLogoUrl?.let(::fetchBitmap),
-                palette = paletteOfImage(coverImg) ?: AlbumPalette(),
+                palette = (paletteOfImage(coverImg) ?: AlbumPalette()).graded(mood),
             )
         } finally {
             coverImg.close()

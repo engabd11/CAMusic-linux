@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Palette
@@ -61,6 +62,9 @@ import com.engabd.sendpin.linux.ui.PageGutter
 import com.engabd.sendpin.linux.ui.PageHeader
 import com.engabd.sendpin.linux.ui.PillButton
 import com.engabd.sendpin.linux.ui.SegmentedControl
+import com.engabd.sendpin.linux.ui.LiquidStyle
+import com.engabd.sendpin.linux.screensaver.ListeningLayout
+import com.engabd.sendpin.ui.design.ColourMood
 import com.engabd.sendpin.linux.ui.applyKey
 import com.engabd.sendpin.linux.ui.touchDragScroll
 import com.engabd.sendpin.ui.design.a
@@ -196,6 +200,9 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
                         scope.launch { settings.setGlassBlur(v) }
                     }
                 }
+
+                // ── Colour & finish ──
+                ColourCard(model)
 
                 // ── Now playing & motion ──
                 MotionCard(model)
@@ -383,6 +390,86 @@ private fun ScreensaverCard(model: PanelModel) {
 }
 
 /**
+ * The panel as a picture: the grade every album's colours are set in, the finish over
+ * the glass, and the night for a station that never turns off. Looks only.
+ */
+@Composable
+private fun ColourCard(model: PanelModel) {
+    val settings = model.settings
+    val scope = rememberCoroutineScope()
+    val mood by settings.colourMood.collectAsState(initial = "natural")
+    val vignette by settings.vignette.collectAsState(initial = "off")
+    val grain by settings.filmGrain.collectAsState(initial = "off")
+    val night by settings.nightMode.collectAsState(initial = "off")
+    val startH by settings.nightStartH.collectAsState(initial = 22)
+    val endH by settings.nightEndH.collectAsState(initial = 7)
+    val depth by settings.nightDepth.collectAsState(initial = "gentle")
+
+    SettingsCard(Icons.Default.Brush, "Colour & finish",
+        "How every record lights the room, and the glass the panel is seen through.") {
+        Label("Colour mood")
+        SegmentedControl(
+            options = ColourMood.entries,
+            selected = ColourMood.from(mood),
+            label = { it.label },
+            onSelect = { v -> scope.launch { settings.setColourMood(v.key) } },
+        )
+        Hint(ColourMood.from(mood).description + " The covers themselves are never changed.")
+        Label("Vignette")
+        SegmentedControl(
+            options = listOf("off", "soft", "deep"),
+            selected = vignette,
+            label = { it.replaceFirstChar { c -> c.uppercase() } },
+            onSelect = { v -> scope.launch { settings.setVignette(v) } },
+        )
+        Label("Film grain")
+        SegmentedControl(
+            options = listOf("off", "fine", "rich"),
+            selected = grain,
+            label = { it.replaceFirstChar { c -> c.uppercase() } },
+            onSelect = { v -> scope.launch { settings.setFilmGrain(v) } },
+        )
+        Hint("Vignette darkens the edges like a framed print. Grain lays a still film texture over everything, and smooths the banding an LCD shows in soft gradients.")
+        Label("Night")
+        SegmentedControl(
+            options = listOf("off", "scheduled", "always"),
+            selected = night,
+            label = { when (it) { "scheduled" -> "On a schedule"; "always" -> "Always"; else -> "Off" } },
+            onSelect = { v -> scope.launch { settings.setNightMode(v) } },
+        )
+        Hint("Warms the whole panel toward lamplight and dims it, easing in and out over twenty minutes.")
+        if (night == "scheduled") {
+            Label("Night begins")
+            SegmentedControl(
+                options = listOf(20, 21, 22, 23, 0),
+                selected = startH,
+                label = { hourLabel(it) },
+                onSelect = { v -> scope.launch { settings.setNightStartH(v) } },
+            )
+            Label("Morning comes")
+            SegmentedControl(
+                options = listOf(5, 6, 7, 8, 9),
+                selected = endH,
+                label = { hourLabel(it) },
+                onSelect = { v -> scope.launch { settings.setNightEndH(v) } },
+            )
+        }
+        if (night != "off") {
+            Label("Depth")
+            SegmentedControl(
+                options = listOf("gentle", "deep"),
+                selected = depth,
+                label = { it.replaceFirstChar { c -> c.uppercase() } },
+                onSelect = { v -> scope.launch { settings.setNightDepth(v) } },
+            )
+        }
+    }
+}
+
+/** An hour of the day as the panel shows it: `22:00`. */
+internal fun hourLabel(h: Int): String = "%02d:00".format(h)
+
+/**
  * How the player moves: the cover held per album and turned over on a new one, the cover
  * coming alive into each track, the words and colours easing rather than cutting, and
  * the library's navigation. Looks only — none of it touches playback.
@@ -394,6 +481,7 @@ private fun MotionCard(model: PanelModel) {
     val hold by settings.artHoldAlbum.collectAsState(initial = true)
     val transition by settings.albumTransition.collectAsState(initial = "flip")
     val living by settings.livingArt.collectAsState(initial = "subtle")
+    val livingStyle by settings.livingStyle.collectAsState(initial = "marble")
     val livingDelay by settings.livingArtDelayS.collectAsState(initial = 10)
     val textMotion by settings.trackTextMotion.collectAsState(initial = true)
     val ambient by settings.ambientMotion.collectAsState(initial = true)
@@ -430,6 +518,14 @@ private fun MotionCard(model: PanelModel) {
         )
         Hint("A little way into each track the album's colours behind the player start to flow, mixing like a liquid of inks; Vivid is bolder and quicker. The cover itself stays still, and pausing lets the colours settle. Off brings back the soft colour blooms.")
         if (living != "off") {
+            Label("Liquid style")
+            SegmentedControl(
+                options = LiquidStyle.entries,
+                selected = LiquidStyle.from(livingStyle),
+                label = { it.label },
+                onSelect = { v -> scope.launch { settings.setLivingStyle(v.key) } },
+            )
+            Hint(LiquidStyle.from(livingStyle).description)
             Label("Starts flowing after")
             SegmentedControl(
                 options = listOf(5, 10, 20, 30),
@@ -467,6 +563,7 @@ private fun ListeningCard(model: PanelModel) {
     val enabled by settings.listeningMode.collectAsState(initial = true)
     val delayMin by settings.listeningDelayMin.collectAsState(initial = 3)
     val clock by settings.listeningClock.collectAsState(initial = true)
+    val layout by settings.listeningLayout.collectAsState(initial = "classic")
 
     SettingsCard(Icons.Default.Headphones, "Listening mode",
         "While music plays and the panel is left alone, the controls step aside and the record takes the screen.") {
@@ -481,7 +578,15 @@ private fun ListeningCard(model: PanelModel) {
                 label = { "$it min" },
                 onSelect = { m -> scope.launch { settings.setListeningDelayMin(m) } },
             )
-            ToggleRow("Clock", "The time and date above the cover.", clock) { v ->
+            Label("Layout")
+            SegmentedControl(
+                options = ListeningLayout.entries,
+                selected = ListeningLayout.from(layout),
+                label = { it.label },
+                onSelect = { v -> scope.launch { settings.setListeningLayout(v.key) } },
+            )
+            Hint(ListeningLayout.from(layout).description)
+            ToggleRow("Clock", "The time and date above the record.", clock) { v ->
                 scope.launch { settings.setListeningClock(v) }
             }
             Hint("Burn-in drift (in the screensaver settings below) moves this view too.")

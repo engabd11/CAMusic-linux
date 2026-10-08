@@ -26,9 +26,6 @@ import com.engabd.sendpin.ui.theme.Ink
 /** [Ink] with another alpha — the scrim arithmetic reads better with it. */
 fun Color.a(alpha: Float): Color = copy(alpha = alpha)
 
-private fun saturate(amount: Float) =
-    ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(amount) })
-
 /**
  * The full-bleed album wash behind the player pane — the desktop fork of :app's
  * [MeltBackdrop]. The cover is blown up, blurred past recognition and
@@ -44,6 +41,10 @@ private fun saturate(amount: Float) =
 @Composable
 fun BoxScope.MeltBackdrop(url: String?, intensity: Float = 1f, scrim: Float = 0f) {
     val s = scrim.coerceIn(0f, 1f)
+    // The wash takes Settings' colour mood, as the palette does (ColourMood.kt).
+    val mood = LocalColourMood.current
+    val lead = LocalPalette.current.accent
+    val filter = remember(mood, lead) { washFilter(mood, 2.7f, lead) }
     Box(Modifier.matchParentSize().backdropSource()) {
         // A new album's wash melts in over the old one rather than reloading from black.
         // The now-playing URL is held per album (linux/ui/NowArt.kt), so this only ever
@@ -55,7 +56,7 @@ fun BoxScope.MeltBackdrop(url: String?, intensity: Float = 1f, scrim: Float = 0f
                         model = u,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        colorFilter = saturate(2.7f),
+                        colorFilter = filter,
                         modifier = Modifier
                             .matchParentSize()
                             .graphicsLayer {

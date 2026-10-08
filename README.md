@@ -38,7 +38,7 @@ A Jellyfin session is reported alongside playback, so anything that follows
 Jellyfin sessions — HueGhost's follow mode in particular — can drive the lights
 from the panel's queue.
 
-This is a **local, personal build**: no releases, no cloud. It began as a copy
+This is a **local, personal build**: no accounts, no cloud. It began as a copy
 of the Android app [`engabd11/CAMusic`](https://github.com/engabd11/CAMusic) and
 is now developed separately — see [Origins](#origins).
 
@@ -53,8 +53,7 @@ Working and live-verified end to end on the reference panel:
 - Both layout modes (landscape / portrait), chosen in Settings, on a WM-less X server
 - Unit tests for the panel, the MPD and Jellyfin clients (`:linux:test`, run by CI on every push)
 
-Not yet: auto-play after queueing (MPD stays paused until you tap play), quality
-badges on foreign queues.
+Not yet: quality badges on foreign queues.
 
 ## Install
 
@@ -127,19 +126,24 @@ Notes learned the hard way, kept here so the next setup is faster:
 
 ### Look and motion options
 
-Every visual extra is a switch in **Settings → Now playing & motion** and
-**Settings → Listening mode** (or a key in `settings.json`). None of them touch
-playback.
+Every visual extra is a switch in **Settings → Colour & finish**, **Settings → Now
+playing & motion** and **Settings → Listening mode** (or a key in `settings.json`).
+None of them touch playback.
 
 | Key | Default | What it does |
 |---|---|---|
 | `art_hold_album` | `true` | Holds one cover for the whole album. Jellyfin names embedded art per *track*, so without this every skip reloaded the cover, wash and palette (the flash on skip). |
 | `album_transition` | `flip` | `flip` \| `dissolve` \| `slide` \| `off` — how the cover changes when a **new album** starts. A skip inside one album never moves it. |
 | `living_art` | `subtle` | `off` \| `subtle` \| `vivid` — living colours: from `living_art_delay_s` (default 10 s) into each track, the album's colour bleed behind the player (and in Listening mode) flows like a liquid mixture of the record's colours, gathering speed as it wakes and settling when paused. The cover itself stays still. Off brings back the soft blooms. |
+| `living_style` | `marble` | `marble` \| `aurora` \| `nebula` \| `lava` \| `silk` — the shape the living colours flow in: inks in water, hanging curtains, curling smoke, rising wax, or ribbons with a sheen. |
+| `colour_mood` | `natural` | `natural` \| `warm` \| `cool` \| `mono` \| `neon` — a grade over every album's colours (accent, liquid, blooms, Listening mode, screensaver). The covers themselves are never changed. |
+| `vignette` | `off` | `off` \| `soft` \| `deep` — the panel's edges darkened like a framed print. |
+| `film_grain` | `off` | `off` \| `fine` \| `rich` — a still film grain over everything, re-laid every minute; it also hides LCD banding in soft gradients. |
+| `night_mode` | `off` | `off` \| `scheduled` \| `always` — warms the whole panel toward lamplight and dims it. Scheduled runs from `night_start_h` (22) to `night_end_h` (7), easing over 20 minutes at each end; `night_depth` is `gentle` or `deep`. |
 | `track_text_motion` | `true` | Title and artist glide over on a track change. |
 | `ambient_motion` | `true` | The album's colour blooms drift slowly behind the player and pages. |
 | `cover_rests_on_pause` | `true` | Paused, the cover settles back slightly and dims. |
-| `listening_mode` | `true` | While music plays and nobody touches the panel for `listening_delay_min` (default 3), the record takes the screen: a large living cover, the title set in a display face, a hairline of progress and the signal path. A tap brings the controls back. `listening_clock` shows the time. |
+| `listening_mode` | `true` | While music plays and nobody touches the panel for `listening_delay_min` (default 3), the record takes the screen: a large living cover, the title set in a display face, a hairline of progress and the signal path. A tap brings the controls back. `listening_clock` shows the time; `listening_layout` is `classic` \| `vinyl` (a turning record with the cover as its label) \| `poster` (huge type, small cover) \| `cover` (the art alone). |
 | `library_retap_home` | `true` | Tapping **Library** while browsing an album or artist returns to the library's home page. |
 | `page_transitions` | `true` | Library pages slide; tabs cross-fade. |
 

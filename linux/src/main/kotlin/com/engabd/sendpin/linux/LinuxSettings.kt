@@ -227,12 +227,46 @@ class LinuxSettings(private val path: Path) {
     suspend fun setAmbientMotion(value: Boolean) = set("ambient_motion", JsonPrimitive(value))
     suspend fun setCoverRestsOnPause(value: Boolean) = set("cover_rests_on_pause", JsonPrimitive(value))
 
+    /**
+     * `marble` | `aurora` | `nebula` | `lava` | `silk` — the shape the living colours
+     * flow in (LiquidBleed.kt). Only drawn while [livingArt] is on.
+     */
+    val livingStyle: Flow<String> = str("living_style", "marble")
+    suspend fun setLivingStyle(value: String) = set("living_style", JsonPrimitive(value))
+
+    // ── Colour & finish (the grade over every album, and the glass in front) ──
+
+    /** `natural` | `warm` | `cool` | `mono` | `neon` — see ui/design/ColourMood.kt. */
+    val colourMood: Flow<String> = str("colour_mood", "natural")
+    /** `off` | `soft` | `deep` — the screen's edges darkened, as a print is framed. */
+    val vignette: Flow<String> = str("vignette", "off")
+    /** `off` | `fine` | `rich` — a film grain over everything; it also hides LCD banding. */
+    val filmGrain: Flow<String> = str("film_grain", "off")
+    /** `off` | `scheduled` | `always` — the panel warmed and dimmed for the night. */
+    val nightMode: Flow<String> = str("night_mode", "off")
+    /** Hours (0..23) the scheduled night begins and ends. */
+    val nightStartH: Flow<Int> = int("night_start_h", 22)
+    val nightEndH: Flow<Int> = int("night_end_h", 7)
+    /** `gentle` | `deep` — how far the night dims. */
+    val nightDepth: Flow<String> = str("night_depth", "gentle")
+
+    suspend fun setColourMood(value: String) = set("colour_mood", JsonPrimitive(value))
+    suspend fun setVignette(value: String) = set("vignette", JsonPrimitive(value))
+    suspend fun setFilmGrain(value: String) = set("film_grain", JsonPrimitive(value))
+    suspend fun setNightMode(value: String) = set("night_mode", JsonPrimitive(value))
+    suspend fun setNightStartH(value: Int) = set("night_start_h", JsonPrimitive(value))
+    suspend fun setNightEndH(value: Int) = set("night_end_h", JsonPrimitive(value))
+    suspend fun setNightDepth(value: String) = set("night_depth", JsonPrimitive(value))
+
     // ── Listening mode (the ambient view while music plays and nobody touches) ──
 
     val listeningMode: Flow<Boolean> = bool("listening_mode", true)
     /** Minutes untouched, while playing, before the listening view takes the screen. */
     val listeningDelayMin: Flow<Int> = int("listening_delay_min", 3)
     val listeningClock: Flow<Boolean> = bool("listening_clock", true)
+    /** `classic` | `vinyl` | `poster` | `cover` — how the record is laid out. */
+    val listeningLayout: Flow<String> = str("listening_layout", "classic")
+    suspend fun setListeningLayout(value: String) = set("listening_layout", JsonPrimitive(value))
 
     suspend fun setListeningMode(value: Boolean) = set("listening_mode", JsonPrimitive(value))
     suspend fun setListeningDelayMin(value: Int) = set("listening_delay_min", JsonPrimitive(value))

@@ -33,4 +33,58 @@ class ListeningTest {
         assertEquals("Topping DX5 II", signalLine(null, "Topping DX5 II"))
         assertEquals("", signalLine(null, null))
     }
+
+    @Test
+    fun `the view takes touches only once it is fully up and staying up`() {
+        assertTrue(overlayCaptures(target = true, current = true, running = false))
+        // fading in: the controls are still what the eye sees
+        assertFalse(overlayCaptures(target = true, current = false, running = true))
+        // fading out after the wake tap: the next tap is pause, and must reach it
+        assertFalse(overlayCaptures(target = false, current = true, running = true))
+        assertFalse(overlayCaptures(target = false, current = false, running = false))
+    }
+
+    @Test
+    fun `a press while the view fades in sends it away, one before it began does not`() {
+        assertTrue(pressEndsEntrance(showing = true, captures = false, pressAtMs = 2_000, shownAtMs = 1_000))
+        assertFalse(pressEndsEntrance(showing = true, captures = false, pressAtMs = 500, shownAtMs = 1_000))
+        // fully up: the view's own tap handles it (wake, or the gallery's hold-to-play)
+        assertFalse(pressEndsEntrance(showing = true, captures = true, pressAtMs = 2_000, shownAtMs = 1_000))
+        assertFalse(pressEndsEntrance(showing = false, captures = false, pressAtMs = 2_000, shownAtMs = 1_000))
+    }
+
+    @Test
+    fun `a press is activity and is remembered, a plain touch is only activity`() {
+        var now = 1_000L
+        val gate = IdleGate { now }
+        now = 5_000L
+        gate.touch()
+        assertEquals(0L, gate.lastPress.value)
+        assertEquals(0L, gate.idleMs())
+        now = 9_000L
+        gate.press()
+        assertEquals(9_000L, gate.lastPress.value)
+        assertEquals(0L, gate.idleMs())
+    }
+
+    @Test
+    fun `the record turns at 33 and a third, and not at all when stopped`() {
+        // one second at full speed is 200 degrees: 33 1/3 turns a minute
+        assertEquals(200f, spinStep(0f, 1f, 1f), 0.001f)
+        assertEquals(10f, spinStep(350f, 0.1f, 1f), 0.001f)
+        assertEquals(45f, spinStep(45f, 1f, 0f), 0.001f)
+        // half way through spinning up, half the speed
+        assertEquals(100f, spinStep(0f, 1f, 0.5f), 0.001f)
+        // a belt drive catches quickly and coasts down slowly
+        assertTrue(spinEaseMs(playing = true) < spinEaseMs(playing = false))
+    }
+
+    @Test
+    fun `layouts read from their keys, and an unknown one is the classic`() {
+        assertEquals(ListeningLayout.VINYL, ListeningLayout.from("vinyl"))
+        assertEquals(ListeningLayout.POSTER, ListeningLayout.from("poster"))
+        assertEquals(ListeningLayout.COVER, ListeningLayout.from("cover"))
+        assertEquals(ListeningLayout.CLASSIC, ListeningLayout.from(null))
+        assertEquals(ListeningLayout.CLASSIC, ListeningLayout.from("disco"))
+    }
 }

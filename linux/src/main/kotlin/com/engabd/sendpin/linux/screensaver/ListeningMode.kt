@@ -3,6 +3,7 @@ package com.engabd.sendpin.linux.screensaver
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -85,6 +86,7 @@ fun ListeningHost(model: PanelModel, gate: IdleGate) {
     val enabled by settings.listeningMode.collectAsState(initial = true)
     val delayMin by settings.listeningDelayMin.collectAsState(initial = 3)
     val clock by settings.listeningClock.collectAsState(initial = true)
+    val layout by settings.listeningLayout.collectAsState(initial = "classic")
     // The burn-in drift is one setting for both always-on views.
     val drift by settings.screensaverDrift.collectAsState(initial = true)
     val remote by model.state.collectAsState()
@@ -111,17 +113,46 @@ fun ListeningHost(model: PanelModel, gate: IdleGate) {
         gate.touch()
     }
 
+    // The view takes touches only once it is fully up (overlayCaptures). It used to take
+    // them for as long as it was drawn: the tap after the one that woke it landed in the
+    // fade-out and was swallowed, so pause took two or three goes. While it fades in, a tap
+    // goes through to the controls the eye still sees, and the view steps aside.
+    val visibility = remember { MutableTransitionState(false) }
+    visibility.targetState = showing
+    val captures = overlayCaptures(visibility)
+    StepAsideOnPress(gate, showing, captures, onStepAside = ::dismiss)
+
     AnimatedVisibility(
-        visible = showing,
+        visibleState = visibility,
         enter = fadeIn(tween(1_600)),
         exit = fadeOut(tween(600)),
     ) {
-        ListeningView(model, clock = clock, drift = drift, onTap = ::dismiss)
+        ListeningView(model, ListeningLayout.from(layout), clock = clock, drift = drift, captures = captures, onTap = ::dismiss)
+    }
+}
+
+/** How the listening view lays the record out — Settings → Listening mode → Layout. */
+internal enum class ListeningLayout(val key: String, val label: String, val description: String) {
+    CLASSIC("classic", "Classic", "The cover beside its words, the room lit in its colours."),
+    VINYL("vinyl", "Vinyl", "The record on the platter, its cover as the label, turning while it plays."),
+    POSTER("poster", "Poster", "The title set huge like a gig poster, the cover small in the corner."),
+    COVER("cover", "Cover only", "Just the artwork, large, in its own light."),
+    ;
+
+    companion object {
+        fun from(key: String?) = entries.firstOrNull { it.key == key } ?: CLASSIC
     }
 }
 
 @Composable
-private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onTap: () -> Unit) {
+private fun ListeningView(
+    model: PanelModel,
+    layout: ListeningLayout,
+    clock: Boolean,
+    drift: Boolean,
+    captures: Boolean,
+    onTap: () -> Unit,
+) {
     val remote by model.state.collectAsState()
     val queue by model.queue.collectAsState()
     val transition by model.settings.albumTransition.collectAsState(initial = ArtTransition.FLIP)
@@ -142,7 +173,10 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onTap() }) },
+            .then(
+                if (!captures) Modifier
+                else Modifier.pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onTap() }) },
+            ),
     ) {
         RoomLight(palette, living, seed = nowArt.key.hashCode()) { age.value }
         // Read once here: inside the Row and Column below, the box's own scope is not
@@ -150,15 +184,18 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
         val w = maxWidth
         val h = maxHeight
         val landscape = w > h
+        val playing = remote?.playing == true
+        // The poster keeps the top left for its small cover, so its clock sits right.
+        val clockRight = landscape || layout == ListeningLayout.POSTER
 
         if (clock) {
             Clock(
                 accent = null,
                 neutral = false,
                 scale = 0.78f,
-                align = if (landscape) Alignment.End else Alignment.CenterHorizontally,
+                align = if (clockRight) Alignment.End else Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .align(if (landscape) Alignment.TopEnd else Alignment.TopCenter)
+                    .align(if (clockRight) Alignment.TopEnd else Alignment.TopCenter)
                     .padding(top = 36.dp, start = maxWidth * 0.07f, end = maxWidth * 0.07f)
                     .offset { driftOffset() },
             )
@@ -176,8 +213,38 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
             )
         }
 
-        if (landscape) {
-            Row(
+        // The record itself: the cover, or (Vinyl) the cover as a turning record's label.
+        val record: @Composable (Modifier) -> Unit = if (layout == ListeningLayout.VINYL) {
+            { m -> VinylRecord(nowArt, palette.accent, playing, transition, m) }
+        } else {
+            cover
+        }
+
+        when {
+            layout == ListeningLayout.COVER -> Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = maxWidth * 0.07f)
+                    .padding(top = if (clock) 56.dp else 0.dp)
+                    .offset { driftOffset() },
+                contentAlignment = Alignment.Center,
+            ) {
+                cover(if (landscape) Modifier.size(minOf(h * 0.78f, w * 0.6f)) else Modifier.fillMaxWidth(0.94f))
+            }
+
+            layout == ListeningLayout.POSTER -> Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = maxWidth * 0.07f)
+                    .padding(top = 40.dp, bottom = maxHeight * 0.08f)
+                    .offset { driftOffset() },
+            ) {
+                cover(Modifier.size(if (landscape) h * 0.26f else w * 0.44f))
+                Spacer(Modifier.weight(1f))
+                TrackWords(model, track, TextAlign.Start, titleMaxSp = 150f)
+            }
+
+            landscape -> Row(
                 Modifier
                     .fillMaxSize()
                     .padding(horizontal = maxWidth * 0.07f)
@@ -185,14 +252,15 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
                     .offset { driftOffset() },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                cover(Modifier.size(minOf(h * 0.70f, w * 0.42f)))
+                val vinyl = layout == ListeningLayout.VINYL
+                record(Modifier.size(if (vinyl) minOf(h * 0.82f, w * 0.48f) else minOf(h * 0.70f, w * 0.42f)))
                 Spacer(Modifier.width(w * 0.06f))
                 Box(Modifier.weight(1f)) {
                     TrackWords(model, track, TextAlign.Start, titleMaxSp = 64f)
                 }
             }
-        } else {
-            Column(
+
+            else -> Column(
                 Modifier
                     .fillMaxSize()
                     .padding(horizontal = maxWidth * 0.07f)
@@ -200,7 +268,7 @@ private fun ListeningView(model: PanelModel, clock: Boolean, drift: Boolean, onT
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.weight(if (clock) 1.15f else 0.8f))
-                cover(Modifier.fillMaxWidth(0.92f))
+                record(Modifier.fillMaxWidth(if (layout == ListeningLayout.VINYL) 0.98f else 0.92f))
                 Spacer(Modifier.height(52.dp))
                 TrackWords(model, track, TextAlign.Center, titleMaxSp = 54f)
                 Spacer(Modifier.weight(1f))
