@@ -1,7 +1,13 @@
 package com.engabd.sendpin.linux.preview
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.unit.Density
 import com.engabd.sendpin.audio.LocalTrack
@@ -25,12 +31,18 @@ import com.engabd.sendpin.linux.PortraitShell
 import com.engabd.sendpin.linux.screensaver.IdleGate
 import com.engabd.sendpin.linux.screensaver.ListeningHost
 import com.engabd.sendpin.linux.screensaver.ScreensaverHost
+import com.engabd.sendpin.linux.ui.LiquidStyle
+import com.engabd.sendpin.linux.ui.LocalLiquidStyle
+import com.engabd.sendpin.linux.ui.PanelFinish
 import com.engabd.sendpin.ma.MaItem
 import com.engabd.sendpin.ma.MaSearchResults
+import com.engabd.sendpin.ui.design.ColourMood
+import com.engabd.sendpin.ui.design.LocalColourMood
 import com.engabd.sendpin.ui.theme.AccentChoice
 import com.engabd.sendpin.ui.theme.SendspinTheme
 import com.engabd.sendpin.ui.theme.ThemeChoice
 import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Paint
@@ -52,6 +64,7 @@ import kotlin.random.Random
  * library's questions from a made-up catalogue of fictional artists.
  *
  *   ./gradlew :linux:renderPreviews   → one PNG per screen in linux/build/previews
+ *   PREVIEW_ONLY=mood,liquid ./gradlew :linux:renderPreviews   → just those
  */
 
 fun main(args: Array<String>) {
@@ -201,9 +214,62 @@ private fun renderAll(args: Array<String>) {
     listening("27-listening-landscape", 1280, 800)
     listening("28-listening-portrait-noclock", 800, 1280, clock = false)
 
+    // The looks: the colour moods, the liquid styles, the listening layouts and the
+    // finish — each through Looked, which provides them the way Main.kt does.
+    fun looked(name: String, width: Int, height: Int, frames: Int = 120, setup: suspend LinuxSettings.() -> Unit, content: @Composable (PanelModel) -> Unit) {
+        val m = freshModel()
+        runBlocking { m.settings.setup() }
+        render(File(out, "$name.png"), width, height, frames = frames) {
+            Themed { Looked(m) { content(m) } }
+        }
+    }
+    val nowPlaying: @Composable (PanelModel) -> Unit = { m ->
+        PortraitShell(m, initialTab = PanelTab.LIBRARY, initiallyExpanded = true, libraryState = remember { LibraryState() })
+    }
+    for (mood in ColourMood.entries.filter { it != ColourMood.NATURAL }) {
+        looked("29-mood-${mood.key}", 800, 1280, setup = { setLivingArt("off"); setColourMood(mood.key) }, content = nowPlaying)
+    }
+    for (style in LiquidStyle.entries) {
+        // Past the living-colour mark, so the liquid is up and flowing.
+        looked("33-liquid-${style.key}", 800, 1280, frames = 320, setup = { setLivingArt("vivid"); setLivingArtDelayS(5); setLivingStyle(style.key) }, content = nowPlaying)
+    }
+    for ((layout, w, h) in listOf(
+        Triple("vinyl", 800, 1280), Triple("vinyl", 1280, 800),
+        Triple("poster", 800, 1280), Triple("poster", 1280, 800),
+        Triple("cover", 800, 1280),
+    )) {
+        val shape = if (w > h) "landscape" else "portrait"
+        looked("38-listening-$layout-$shape", w, h, frames = 320, setup = { setLivingArt("off"); setListeningLayout(layout) }) { m ->
+            m.listeningNow.value = true
+            ListeningHost(m, remember { IdleGate() })
+        }
+    }
+    looked("43-finish-night-grain", 800, 1280, setup = {
+        setLivingArt("off"); setVignette("soft"); setFilmGrain("fine"); setNightMode("always")
+    }, content = nowPlaying)
+    looked("44-finish-warm-vignette-landscape", 1280, 800, setup = {
+        setLivingArt("off"); setColourMood("warm"); setVignette("deep")
+    }) { m -> PanelShell(m, LayoutMode.LANDSCAPE) }
+
     server.stop()
     println("Previews written to ${out.absolutePath}")
     kotlin.system.exitProcess(0)
+}
+
+/** The panel's looks from [m]'s settings, as Main.kt provides them, with the finish on top. */
+@Composable
+private fun Looked(m: PanelModel, content: @Composable () -> Unit) {
+    val mood by m.settings.colourMood.collectAsState(initial = runBlocking { m.settings.colourMood.first() })
+    val liquid by m.settings.livingStyle.collectAsState(initial = runBlocking { m.settings.livingStyle.first() })
+    CompositionLocalProvider(
+        LocalColourMood provides ColourMood.from(mood),
+        LocalLiquidStyle provides LiquidStyle.from(liquid),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            content()
+            PanelFinish(m.settings)
+        }
+    }
 }
 
 @Composable
@@ -220,6 +286,9 @@ private const val RENDER_BUDGET_NS = 90_000_000_000L
  * — then write the last frame.
  */
 private fun render(file: File, width: Int, height: Int, frames: Int = 90, content: @Composable () -> Unit) {
+    // PREVIEW_ONLY=listening renders just the previews whose name holds that text.
+    val only = System.getenv("PREVIEW_ONLY")?.takeIf { it.isNotBlank() }
+    if (only != null && only.split(',').none { file.name.contains(it.trim()) }) return
     val scene = ImageComposeScene(width, height, Density(1f), content = content)
     val started = System.nanoTime()
     var t = 0L

@@ -66,4 +66,25 @@ class ListeningTest {
         assertEquals(9_000L, gate.lastPress.value)
         assertEquals(0L, gate.idleMs())
     }
+
+    @Test
+    fun `the record turns at 33 and a third, and not at all when stopped`() {
+        // one second at full speed is 200 degrees: 33 1/3 turns a minute
+        assertEquals(200f, spinStep(0f, 1f, 1f), 0.001f)
+        assertEquals(10f, spinStep(350f, 0.1f, 1f), 0.001f)
+        assertEquals(45f, spinStep(45f, 1f, 0f), 0.001f)
+        // half way through spinning up, half the speed
+        assertEquals(100f, spinStep(0f, 1f, 0.5f), 0.001f)
+        // a belt drive catches quickly and coasts down slowly
+        assertTrue(spinEaseMs(playing = true) < spinEaseMs(playing = false))
+    }
+
+    @Test
+    fun `layouts read from their keys, and an unknown one is the classic`() {
+        assertEquals(ListeningLayout.VINYL, ListeningLayout.from("vinyl"))
+        assertEquals(ListeningLayout.POSTER, ListeningLayout.from("poster"))
+        assertEquals(ListeningLayout.COVER, ListeningLayout.from("cover"))
+        assertEquals(ListeningLayout.CLASSIC, ListeningLayout.from(null))
+        assertEquals(ListeningLayout.CLASSIC, ListeningLayout.from("disco"))
+    }
 }

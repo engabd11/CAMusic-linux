@@ -10,6 +10,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import com.engabd.sendpin.linux.screensaver.IdleGate
 import com.engabd.sendpin.linux.ui.LiquidStyle
 import com.engabd.sendpin.linux.ui.LocalLiquidStyle
+import com.engabd.sendpin.linux.ui.PanelFinish
 import com.engabd.sendpin.linux.screensaver.ListeningHost
 import com.engabd.sendpin.linux.screensaver.ScreensaverHost
 import androidx.compose.runtime.collectAsState
@@ -104,36 +105,38 @@ fun main() = application {
             seedAccent = Color(fixed),
             glassBlur = glassBlur,
         ) {
-          // Every album palette below is graded in this mood (rememberAlbumPalette), and
-          // every living-colour room flows in this style (AlbumBleed).
-          CompositionLocalProvider(
-              LocalColourMood provides ColourMood.from(mood),
-              LocalLiquidStyle provides LiquidStyle.from(liquid),
-          ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    // Every touch, anywhere, restarts the screensaver's clock. The Initial
-                    // pass sees it before any pane does, and nothing is consumed. A finger
-                    // going down is also a press, which a view still fading in steps
-                    // aside for (IdleGate.lastPress).
-                    .pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) {
-                                val event = awaitPointerEvent(PointerEventPass.Initial)
-                                if (event.changes.any { it.pressed && !it.previousPressed }) idle.press()
-                                else idle.touch()
-                            }
-                        }
-                    },
+            // Every album palette below is graded in this mood (rememberAlbumPalette), and
+            // every living-colour room flows in this style (AlbumBleed).
+            CompositionLocalProvider(
+                LocalColourMood provides ColourMood.from(mood),
+                LocalLiquidStyle provides LiquidStyle.from(liquid),
             ) {
-                PanelShell(model = model, layoutMode = LayoutMode.from(layout))
-                // While music plays and nobody touches: the record takes the screen.
-                ListeningHost(model, idle)
-                // While nothing plays: the album gallery.
-                ScreensaverHost(model, idle)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        // Every touch, anywhere, restarts the screensaver's clock. The Initial
+                        // pass sees it before any pane does, and nothing is consumed. A finger
+                        // going down is also a press, which a view still fading in steps
+                        // aside for (IdleGate.lastPress).
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    if (event.changes.any { it.pressed && !it.previousPressed }) idle.press()
+                                    else idle.touch()
+                                }
+                            }
+                        },
+                ) {
+                    PanelShell(model = model, layoutMode = LayoutMode.from(layout))
+                    // While music plays and nobody touches: the record takes the screen.
+                    ListeningHost(model, idle)
+                    // While nothing plays: the album gallery.
+                    ScreensaverHost(model, idle)
+                    // In front of it all, taking no touches: vignette, grain and the night.
+                    PanelFinish(settings)
+                }
             }
-          }
         }
     }
 }
