@@ -13,6 +13,8 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/engabd11/CAMusic-linux/releases/latest"><img src="https://img.shields.io/github/v/release/engabd11/CAMusic-linux?logo=github" alt="Latest release" /></a>
+  <a href="https://github.com/engabd11/CAMusic-linux/releases"><img src="https://img.shields.io/github/downloads/engabd11/CAMusic-linux/total?logo=github&color=brightgreen" alt="Downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License" /></a>
   <img src="https://img.shields.io/badge/JDK-21%2B-green" alt="JDK 21+" />
   <img src="https://img.shields.io/badge/MPD-0.24-9cf" alt="MPD 0.24" />
