@@ -64,6 +64,6 @@ class SignalChainTest {
     fun `a float pipeline that reports no depth is judged on rate alone`() {
         val c = signalChain(flac9624, RemoteAudioFormat(96_000, 0, 2, 0), "DAC", "off", null)
         assertTrue(c.bitPerfect)
-        assertEquals("96.0k", c.stages[1].value)
+        assertEquals("96 kHz", c.stages[1].value)
     }
 }

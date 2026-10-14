@@ -46,7 +46,7 @@ internal fun signalChain(
     val bits = decoded?.bitDepth ?: 0
     val decodedKnown = decoded != null && rate > 0
     val decodeLabel = if (!decodedKnown) "—" else buildString {
-        append(com.engabd.sendpin.linux.fmtRate(rate))
+        append(StreamQuality.khz(rate)).append(" kHz")
         if (bits > 0) append(" / $bits")
     }
     val sameFormat = source != null && decodedKnown &&

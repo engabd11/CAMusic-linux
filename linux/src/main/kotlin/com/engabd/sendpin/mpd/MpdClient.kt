@@ -808,6 +808,12 @@ class MpdClient(
     /** Stop playback. */
     suspend fun stop() { command("stop") }
 
+    /**
+     * `single oneshot` (MPD 0.21+): play the current song to its end and then stop, once.
+     * MPD clears it itself afterwards. The sleep timer's "end of the album".
+     */
+    suspend fun setStopAfterCurrent(on: Boolean) { command("single ${if (on) "oneshot" else "0"}") }
+
     /** Set the volume (0-100). */
     suspend fun setVolume(volume: Int) { command("setvol ${volume.coerceIn(0, 100)}") }
 

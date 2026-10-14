@@ -73,6 +73,9 @@ class MpdRemote(private val client: MpdClient) : RemotePlayback {
      */
     override suspend fun setShuffle(on: Boolean) = client.setRandom(on)
 
+    /** Play the current song out and stop — see [MpdClient.setStopAfterCurrent]. */
+    suspend fun stopAfterCurrent(on: Boolean) = client.setStopAfterCurrent(on)
+
     override suspend fun setRepeat(mode: String) = client.setRepeat(mode)
     override suspend fun setReplayGain(mode: String) = client.setReplayGainMode(mode)
 

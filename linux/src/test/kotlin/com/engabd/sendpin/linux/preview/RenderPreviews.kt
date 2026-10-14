@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.Density
 import com.engabd.sendpin.audio.LocalTrack
 import com.engabd.sendpin.audio.RemoteAudioFormat
@@ -35,6 +36,7 @@ import com.engabd.sendpin.linux.ui.LiquidStyle
 import com.engabd.sendpin.linux.ui.LocalLiquidStyle
 import com.engabd.sendpin.linux.ui.PanelFinish
 import com.engabd.sendpin.ma.MaItem
+import com.engabd.sendpin.ma.MaLyrics
 import com.engabd.sendpin.ma.MaSearchResults
 import com.engabd.sendpin.ui.design.ColourMood
 import com.engabd.sendpin.ui.design.LocalColourMood
@@ -258,6 +260,55 @@ private fun renderAll(args: Array<String>) {
         setLivingArt("off"); setColourMood("warm"); setVignette("deep")
     }) { m -> PanelShell(m, LayoutMode.LANDSCAPE) }
 
+    // The v1.2 station: each option on, the way it looks once it is switched on.
+    looked("45-station-tonearm-portrait", 800, 1280, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("vinyl"); setTonearm(true); setQueueDeck(true); setSignalPanel(true)
+    }) { m ->
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("46-station-tonearm-landscape", 1280, 800, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("vinyl"); setTonearm(true); setQueueDeck(true)
+    }) { m ->
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("47-station-lyrics-portrait", 800, 1280, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("lyrics")
+    }) { m ->
+        m.state.value = m.state.value?.copy(positionMs = 26_000)
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("48-station-lyrics-landscape", 1280, 800, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("lyrics")
+    }) { m ->
+        m.state.value = m.state.value?.copy(positionMs = 26_000)
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("49-station-big-signal-portrait", 800, 1280, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("poster"); setBigReadouts(true); setSignalPanel(true)
+    }) { m ->
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+
+    // The postcard is a card, not a screen: render it straight from a cover off the preview server.
+    if (System.getenv("PREVIEW_ONLY").let { it.isNullOrBlank() || it.split(',').any { k -> "50-station-postcard".contains(k.trim()) || k.trim() == "station" } }) {
+        val cover = java.net.URL("${server.base}/art/album-0.png").readBytes().let { org.jetbrains.skia.Image.makeFromEncoded(it) }
+        val data = com.engabd.sendpin.linux.station.PostcardData(
+            title = "Glass Tides", artist = "Aurora Vale", album = "Glass Tides", genre = "Ambient",
+            signal = "FLAC 24/96  →  Topping D90SE", coverUrl = null, id = "al0",
+        )
+        val png = com.engabd.sendpin.linux.station.renderPostcard(
+            data, cover.toComposeImageBitmap(), com.engabd.sendpin.ui.design.paletteOfImage(cover) ?: com.engabd.sendpin.ui.design.AlbumPalette(),
+            java.time.LocalDateTime.of(2026, 10, 14, 21, 30),
+        )
+        File(out, "50-station-postcard.png").writeBytes(png)
+        println("  50-station-postcard.png")
+    }
+
     server.stop()
     println("Previews written to ${out.absolutePath}")
     kotlin.system.exitProcess(0)
@@ -415,6 +466,20 @@ private val TRACK_WORDS = listOf(
     "Slow Dance", "Northbound", "Afterimage", "Tidal", "Reprise", "Weightless", "Harbour Lights",
     "Night Bus", "Fever Dream", "Outro",
 )
+private const val SAMPLE_LRC = """
+[00:00.50]The harbour lights are going out one by one
+[00:04.80]And the tide is pulling slowly at the sand
+[00:09.40]I kept your letter folded in my coat
+[00:14.00]Like a map of somewhere I can't understand
+[00:19.00]
+[00:23.00]So carry me over the glass tides
+[00:28.00]Carry me over the low light
+[00:33.00]Everything we lost comes back in time
+[00:38.00]Everything we held was held tonight
+[00:44.00]Hold me in the morning when it's quiet
+[00:49.00]Hold me when the weather turns to gold
+"""
+
 private val GENRES = listOf(
     "Ambient", "Blues", "Classical", "Electronic", "Folk", "Hip-Hop", "Indie", "Jazz", "Metal",
     "Pop", "R&B", "Rock", "Soul", "Soundtrack", "World",
@@ -423,7 +488,7 @@ private val GENRES = listOf(
 private class FakeLibrary(base: String) : MusicSource {
     override val kind = ServerKind.JELLYFIN
     override val providerId = "preview"
-    override val capabilities = setOf(Capability.SEARCH, Capability.GENRES, Capability.FAVORITES, Capability.PLAYLIST_READ, Capability.TRACKS)
+    override val capabilities = setOf(Capability.SEARCH, Capability.GENRES, Capability.FAVORITES, Capability.PLAYLIST_READ, Capability.TRACKS, Capability.LYRICS)
     override val serverUrl = base
 
     val artists: List<MaItem> = ARTISTS.mapIndexed { i, n ->
@@ -496,6 +561,7 @@ private class FakeLibrary(base: String) : MusicSource {
             playlists = emptyList(),
         )
     }
+    override suspend fun lyrics(songId: String): MaLyrics? = MaLyrics(SAMPLE_LRC, synced = true)
     override fun downloadUrl(id: String) = ""
     override fun streamUrl(id: String, format: String) = ""
     override fun coverUrl(id: String?, size: Int): String? = null

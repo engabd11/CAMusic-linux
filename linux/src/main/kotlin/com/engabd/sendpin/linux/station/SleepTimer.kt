@@ -9,7 +9,7 @@ import com.engabd.sendpin.audio.RemoteState
  */
 
 /** What the chip steps through when it is tapped. */
-internal enum class SleepChoice(val label: String, val minutes: Int?) {
+enum class SleepChoice(val label: String, val minutes: Int?) {
     OFF("Sleep", null),
     END_OF_ALBUM("End of album", null),
     M30("30 min", 30),
@@ -25,7 +25,7 @@ internal enum class SleepChoice(val label: String, val minutes: Int?) {
  * index) ends it with the track at that index — MPD is asked to stop after that track, so it
  * plays out whole. [armed] is set once MPD has been asked.
  */
-internal data class SleepTimer(
+data class SleepTimer(
     val choice: SleepChoice,
     val deadlineMs: Long? = null,
     val sideEnd: Int? = null,
