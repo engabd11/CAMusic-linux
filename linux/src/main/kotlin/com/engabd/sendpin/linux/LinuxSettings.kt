@@ -272,6 +272,58 @@ class LinuxSettings(private val path: Path) {
     suspend fun setListeningDelayMin(value: Int) = set("listening_delay_min", JsonPrimitive(value))
     suspend fun setListeningClock(value: Boolean) = set("listening_clock", JsonPrimitive(value))
 
+    // ── The hi-fi station (v1.2) ──────────────────────────────────────────
+    //
+    // Everything here is an addition, and every addition is off until it is switched on:
+    // an upgrade changes nothing about how the panel looks or behaves by itself. The
+    // defaults below are the v1.1 behaviour.
+
+    /** A tonearm on the Vinyl layout: drops at play, lifts at pause, follows the groove. */
+    val tonearm: Flow<Boolean> = bool("tonearm", false)
+    /** The tonearm can be taken by the finger and set down on another track. */
+    val tonearmSeek: Flow<Boolean> = bool("tonearm_seek", false)
+    /** The next records lean against the platter in the Vinyl layout; drag to reorder. */
+    val queueDeck: Flow<Boolean> = bool("queue_deck", false)
+    /** Hold the cover in the listening view to save a postcard to ~/Pictures. */
+    val postcards: Flow<Boolean> = bool("postcards", false)
+    /** Hold the cover in the player to turn it over to the back of the sleeve. */
+    val sleeveFlip: Flow<Boolean> = bool("sleeve_flip", false)
+    /** Swipe the cover to skip, swipe a queue row away, drag a queue row to reorder it. */
+    val touchGestures: Flow<Boolean> = bool("touch_gestures", false)
+    /** Hold a song or a queue row for Play next, Add to queue and the like. */
+    val rowMenus: Flow<Boolean> = bool("row_menus", false)
+    /** Crates: the library as records in bins, beside the usual grid. */
+    val crateMode: Flow<Boolean> = bool("crate_mode", false)
+    /** The signal path as stages — source, decoder, loudness, output — with a bit-perfect lamp. */
+    val signalPanel: Flow<Boolean> = bool("signal_panel", false)
+    /** A sleep timer chip by the loudness chip: end of album, or after a set time. */
+    val sleepTimer: Flow<Boolean> = bool("sleep_timer", false)
+    /** Larger times and clock, for reading from across the room. */
+    val bigReadouts: Flow<Boolean> = bool("big_readouts", false)
+    /** A calm banner with a Retry when MPD or Jellyfin cannot be reached. */
+    val statusBanner: Flow<Boolean> = bool("status_banner", false)
+    /**
+     * `off` | `clock` | `screen_off` — after [deepIdleMin] of nobody touching, the panel goes
+     * to a dim clock alone, or switches the screen off (a touch wakes it).
+     */
+    val deepIdle: Flow<String> = str("deep_idle", "off")
+    val deepIdleMin: Flow<Int> = int("deep_idle_min", 60)
+
+    suspend fun setTonearm(value: Boolean) = set("tonearm", JsonPrimitive(value))
+    suspend fun setTonearmSeek(value: Boolean) = set("tonearm_seek", JsonPrimitive(value))
+    suspend fun setQueueDeck(value: Boolean) = set("queue_deck", JsonPrimitive(value))
+    suspend fun setPostcards(value: Boolean) = set("postcards", JsonPrimitive(value))
+    suspend fun setSleeveFlip(value: Boolean) = set("sleeve_flip", JsonPrimitive(value))
+    suspend fun setTouchGestures(value: Boolean) = set("touch_gestures", JsonPrimitive(value))
+    suspend fun setRowMenus(value: Boolean) = set("row_menus", JsonPrimitive(value))
+    suspend fun setCrateMode(value: Boolean) = set("crate_mode", JsonPrimitive(value))
+    suspend fun setSignalPanel(value: Boolean) = set("signal_panel", JsonPrimitive(value))
+    suspend fun setSleepTimer(value: Boolean) = set("sleep_timer", JsonPrimitive(value))
+    suspend fun setBigReadouts(value: Boolean) = set("big_readouts", JsonPrimitive(value))
+    suspend fun setStatusBanner(value: Boolean) = set("status_banner", JsonPrimitive(value))
+    suspend fun setDeepIdle(value: String) = set("deep_idle", JsonPrimitive(value))
+    suspend fun setDeepIdleMin(value: Int) = set("deep_idle_min", JsonPrimitive(value))
+
     // ── Library navigation ────────────────────────────────────────────────
 
     /** Tapping Library while already on it goes back to the library's home page. */
