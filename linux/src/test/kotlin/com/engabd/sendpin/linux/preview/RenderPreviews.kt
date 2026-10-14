@@ -9,6 +9,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import com.engabd.sendpin.audio.LocalTrack
 import com.engabd.sendpin.audio.RemoteAudioFormat
@@ -35,6 +38,7 @@ import com.engabd.sendpin.linux.ui.LiquidStyle
 import com.engabd.sendpin.linux.ui.LocalLiquidStyle
 import com.engabd.sendpin.linux.ui.PanelFinish
 import com.engabd.sendpin.ma.MaItem
+import com.engabd.sendpin.ma.MaLyrics
 import com.engabd.sendpin.ma.MaSearchResults
 import com.engabd.sendpin.ui.design.ColourMood
 import com.engabd.sendpin.ui.design.LocalColourMood
@@ -258,6 +262,106 @@ private fun renderAll(args: Array<String>) {
         setLivingArt("off"); setColourMood("warm"); setVignette("deep")
     }) { m -> PanelShell(m, LayoutMode.LANDSCAPE) }
 
+    // The v1.2 station: each option on, the way it looks once it is switched on.
+    looked("45-station-tonearm-portrait", 800, 1280, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("vinyl"); setTonearm(true); setQueueDeck(true); setSignalPanel(true)
+    }) { m ->
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("46-station-tonearm-landscape", 1280, 800, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("vinyl"); setTonearm(true); setQueueDeck(true)
+    }) { m ->
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("47-station-lyrics-portrait", 800, 1280, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("lyrics")
+    }) { m ->
+        m.state.value = m.state.value?.copy(positionMs = 26_000)
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("48-station-lyrics-landscape", 1280, 800, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("lyrics")
+    }) { m ->
+        m.state.value = m.state.value?.copy(positionMs = 26_000)
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("49-station-big-signal-portrait", 800, 1280, frames = 360, setup = {
+        setLivingArt("off"); setListeningLayout("poster"); setBigReadouts(true); setSignalPanel(true)
+    }) { m ->
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+
+    // The touch layer and the screens around it.
+    val queueTab: @Composable (PanelModel) -> Unit = { m ->
+        PortraitShell(m, initialTab = PanelTab.QUEUE, initiallyExpanded = false, libraryState = remember { LibraryState() })
+    }
+    looked("51-station-queue-gestures", 800, 1280, frames = 120, setup = {
+        setLivingArt("off"); setTouchGestures(true); setRowMenus(true)
+    }, content = queueTab)
+    looked("52-station-row-menu", 800, 1280, frames = 120, setup = {
+        setLivingArt("off"); setRowMenus(true)
+    }) { m ->
+        val menus = remember {
+            com.engabd.sendpin.linux.station.ActionMenuState().also { st ->
+                st.show(
+                    "Held Breath", "Aurora Vale",
+                    com.engabd.sendpin.linux.queueRowActions(
+                        playing = false, isNext = false, isLast = false, onPlay = {}, onPlayNext = {}, onToEnd = {}, onRemove = {},
+                    ),
+                )
+            }
+        }
+        CompositionLocalProvider(com.engabd.sendpin.linux.station.LocalActionMenu provides menus) {
+            Box(Modifier.fillMaxSize()) {
+                queueTab(m)
+                com.engabd.sendpin.linux.station.ActionMenuHost(menus)
+            }
+        }
+    }
+    looked("53-station-crates", 800, 1280, frames = 140, setup = { setLivingArt("off"); setCrateMode(true) }) { m ->
+        PortraitShell(
+            m, initialTab = PanelTab.LIBRARY, initiallyExpanded = false,
+            libraryState = remember { LibraryState().also { it.bind(lib); it.stack = listOf(LibraryRoute.Home, LibraryRoute.Crates) } },
+        )
+    }
+    looked("54-station-sleeve", 800, 800, frames = 100, setup = { setLivingArt("off") }) { m ->
+        Box(Modifier.fillMaxSize().padding(40.dp)) { com.engabd.sendpin.linux.station.SleeveBack(m) }
+    }
+    looked("55-station-banner", 800, 1280, frames = 120, setup = {
+        setLivingArt("off"); setStatusBanner(true); setSleepTimer(true); setSignalPanel(true); setBigReadouts(true)
+    }) { m ->
+        m.mpdUp.value = false
+        m.setSleep(com.engabd.sendpin.linux.station.SleepChoice.M30)
+        PanelShell(m, LayoutMode.PORTRAIT)
+    }
+    looked("56-station-deep-idle", 800, 1280, frames = 160, setup = { setDeepIdle("clock"); setDeepIdleMin(15) }) { m ->
+        var t = 0L
+        val gate = remember { IdleGate { t } }
+        t = 3 * 60 * 60_000L
+        com.engabd.sendpin.linux.station.DeepIdleHost(m, gate)
+    }
+    portrait("57-station-settings-full", PanelTab.SETTINGS, height = 5600)
+
+    // The postcard is a card, not a screen: render it straight from a cover off the preview server.
+    if (System.getenv("PREVIEW_ONLY").let { it.isNullOrBlank() || it.split(',').any { k -> "50-station-postcard".contains(k.trim()) || k.trim() == "station" } }) {
+        val cover = java.net.URL("${server.base}/art/album-0.png").readBytes().let { org.jetbrains.skia.Image.makeFromEncoded(it) }
+        val data = com.engabd.sendpin.linux.station.PostcardData(
+            title = "Glass Tides", artist = "Aurora Vale", album = "Glass Tides", genre = "Ambient",
+            signal = "FLAC 24/96  →  Topping D90SE", coverUrl = null, id = "al0",
+        )
+        val png = com.engabd.sendpin.linux.station.renderPostcard(
+            data, cover.toComposeImageBitmap(), com.engabd.sendpin.ui.design.paletteOfImage(cover) ?: com.engabd.sendpin.ui.design.AlbumPalette(),
+            java.time.LocalDateTime.of(2026, 10, 14, 21, 30),
+        )
+        File(out, "50-station-postcard.png").writeBytes(png)
+        println("  50-station-postcard.png")
+    }
+
     server.stop()
     println("Previews written to ${out.absolutePath}")
     kotlin.system.exitProcess(0)
@@ -415,6 +519,20 @@ private val TRACK_WORDS = listOf(
     "Slow Dance", "Northbound", "Afterimage", "Tidal", "Reprise", "Weightless", "Harbour Lights",
     "Night Bus", "Fever Dream", "Outro",
 )
+private const val SAMPLE_LRC = """
+[00:00.50]The harbour lights are going out one by one
+[00:04.80]And the tide is pulling slowly at the sand
+[00:09.40]I kept your letter folded in my coat
+[00:14.00]Like a map of somewhere I can't understand
+[00:19.00]
+[00:23.00]So carry me over the glass tides
+[00:28.00]Carry me over the low light
+[00:33.00]Everything we lost comes back in time
+[00:38.00]Everything we held was held tonight
+[00:44.00]Hold me in the morning when it's quiet
+[00:49.00]Hold me when the weather turns to gold
+"""
+
 private val GENRES = listOf(
     "Ambient", "Blues", "Classical", "Electronic", "Folk", "Hip-Hop", "Indie", "Jazz", "Metal",
     "Pop", "R&B", "Rock", "Soul", "Soundtrack", "World",
@@ -423,7 +541,7 @@ private val GENRES = listOf(
 private class FakeLibrary(base: String) : MusicSource {
     override val kind = ServerKind.JELLYFIN
     override val providerId = "preview"
-    override val capabilities = setOf(Capability.SEARCH, Capability.GENRES, Capability.FAVORITES, Capability.PLAYLIST_READ, Capability.TRACKS)
+    override val capabilities = setOf(Capability.SEARCH, Capability.GENRES, Capability.FAVORITES, Capability.PLAYLIST_READ, Capability.TRACKS, Capability.LYRICS)
     override val serverUrl = base
 
     val artists: List<MaItem> = ARTISTS.mapIndexed { i, n ->
@@ -496,6 +614,7 @@ private class FakeLibrary(base: String) : MusicSource {
             playlists = emptyList(),
         )
     }
+    override suspend fun lyrics(songId: String): MaLyrics? = MaLyrics(SAMPLE_LRC, synced = true)
     override fun downloadUrl(id: String) = ""
     override fun streamUrl(id: String, format: String) = ""
     override fun coverUrl(id: String?, size: Int): String? = null

@@ -53,6 +53,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.engabd.sendpin.audio.LocalTrack
+import kotlinx.coroutines.launch
+import com.engabd.sendpin.linux.station.trackStarts
+import com.engabd.sendpin.linux.station.sleepLabel
+import com.engabd.sendpin.linux.station.sideOf
+import com.engabd.sendpin.linux.station.setNeedle
+import com.engabd.sendpin.linux.station.savePostcard
+import com.engabd.sendpin.linux.station.locate
+import com.engabd.sendpin.linux.station.grooveProgress
+import com.engabd.sendpin.linux.station.SignalPath
+import com.engabd.sendpin.linux.station.QueueDeck
+import com.engabd.sendpin.linux.station.PostcardData
+import com.engabd.sendpin.linux.station.LyricSheet
+import com.engabd.sendpin.linux.formatMs
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.core.Animatable
 import com.engabd.sendpin.linux.PanelModel
 import com.engabd.sendpin.linux.ui.AlbumArtStage
 import com.engabd.sendpin.linux.ui.AlbumBleed
@@ -137,6 +157,7 @@ internal enum class ListeningLayout(val key: String, val label: String, val desc
     VINYL("vinyl", "Vinyl", "The record on the platter, its cover as the label, turning while it plays."),
     POSTER("poster", "Poster", "The title set huge like a gig poster, the cover small in the corner."),
     COVER("cover", "Cover only", "Just the artwork, large, in its own light."),
+    LYRICS("lyrics", "Lyric sheet", "The song's words rolling large and timed, set in the album's own lettering."),
     ;
 
     companion object {
@@ -153,10 +174,23 @@ private fun ListeningView(
     captures: Boolean,
     onTap: () -> Unit,
 ) {
+    val settings = model.settings
     val remote by model.state.collectAsState()
     val queue by model.queue.collectAsState()
-    val transition by model.settings.albumTransition.collectAsState(initial = ArtTransition.FLIP)
-    val track = queue.getOrNull(remote?.index?.takeIf { it >= 0 } ?: 0)
+    val albumIds by model.albumIds.collectAsState()
+    val transition by settings.albumTransition.collectAsState(initial = ArtTransition.FLIP)
+    // The station's additions: each is a switch in Settings and off until switched on.
+    val tonearm by settings.tonearm.collectAsState(initial = false)
+    val tonearmSeek by settings.tonearmSeek.collectAsState(initial = false)
+    val deck by settings.queueDeck.collectAsState(initial = false)
+    val postcards by settings.postcards.collectAsState(initial = false)
+    val big by settings.bigReadouts.collectAsState(initial = false)
+    val signalPanel by settings.signalPanel.collectAsState(initial = false)
+    val sleep by model.sleep.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    val index = remote?.index?.takeIf { it >= 0 } ?: 0
+    val track = queue.getOrNull(index)
     val nowArt = rememberNowArt(model)
     val palette = rememberAlbumPalette(nowArt.url)
     val living = rememberLivingArt(model, onOverlay = true)
@@ -168,6 +202,51 @@ private fun ListeningView(
         infiniteRepeatable(tween(3_600_000, easing = LinearEasing), RepeatMode.Reverse),
         label = "listeningClock",
     )
+
+    // The tonearm's side of the record: the album's run of the queue, laid out as groove.
+    val side = remember(queue, index, albumIds) { sideOf(queue, index, albumIds) }
+    val arm = if (layout == ListeningLayout.VINYL && tonearm && side != null) {
+        val lengths = side.durations
+        val here = side.indexOf(index)
+        ArmSpec(
+            starts = trackStarts(lengths),
+            current = here,
+            progress = grooveProgress(lengths, here, remote?.positionMs ?: 0L),
+            onSeek = if (tonearmSeek) { f -> scope.launch { setNeedle(model, side, f) } } else null,
+            label = { f ->
+                val at = locate(lengths, f)
+                "${at.track + 1} · ${side.tracks[at.track].title} · ${formatMs(at.offsetMs)}"
+            },
+        )
+    } else null
+
+    // A postcard: hold the cover. The flash and the line that follows are the acknowledgement.
+    var toast by remember { mutableStateOf<String?>(null) }
+    val flash = remember { Animatable(0f) }
+    fun makePostcard() {
+        val t = track ?: return
+        scope.launch {
+            flash.snapTo(0.55f)
+            launch { flash.animateTo(0f, tween(600)) }
+            toast = "Saving postcard…"
+            val saved = runCatching {
+                savePostcard(
+                    PostcardData(
+                        title = t.title, artist = t.artist, album = t.album, genre = t.genre,
+                        signal = signalLine(mpdBadgeQuality(t, remote?.outputFormat)?.label, remote?.outputDeviceName),
+                        coverUrl = nowArt.url ?: t.artUrl, id = t.id,
+                    ),
+                )
+            }
+            toast = saved.fold({ "Postcard saved to Pictures/CAMusic" }, { "Couldn't save the postcard" })
+            delay(3_500)
+            toast = null
+        }
+    }
+    val withPostcard: (Modifier) -> Modifier = { m ->
+        if (!postcards || !captures) m
+        else m.pointerInput(track?.id) { detectTapGestures(onTap = { onTap() }, onLongPress = { makePostcard() }) }
+    }
 
     BoxWithConstraints(
         Modifier
@@ -192,11 +271,24 @@ private fun ListeningView(
             Clock(
                 accent = null,
                 neutral = false,
-                scale = 0.78f,
+                scale = if (big) 1.25f else 0.78f,
                 align = if (clockRight) Alignment.End else Alignment.CenterHorizontally,
                 modifier = Modifier
                     .align(if (clockRight) Alignment.TopEnd else Alignment.TopCenter)
                     .padding(top = 36.dp, start = maxWidth * 0.07f, end = maxWidth * 0.07f)
+                    .offset { driftOffset() },
+            )
+        }
+        sleep?.let { t ->
+            Text(
+                "☾  " + sleepLabel(t, System.currentTimeMillis()),
+                color = Color.White.copy(alpha = 0.5f),
+                fontFamily = MonoFont,
+                fontSize = 14.sp,
+                letterSpacing = 0.1.em,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 40.dp, start = maxWidth * 0.07f)
                     .offset { driftOffset() },
             )
         }
@@ -215,10 +307,11 @@ private fun ListeningView(
 
         // The record itself: the cover, or (Vinyl) the cover as a turning record's label.
         val record: @Composable (Modifier) -> Unit = if (layout == ListeningLayout.VINYL) {
-            { m -> VinylRecord(nowArt, palette.accent, playing, transition, m) }
+            { m -> VinylRecord(nowArt, palette.accent, playing, transition, withPostcard(m), arm) }
         } else {
-            cover
+            { m -> cover(withPostcard(m)) }
         }
+        val deckOn = layout == ListeningLayout.VINYL && deck
 
         when {
             layout == ListeningLayout.COVER -> Box(
@@ -229,7 +322,7 @@ private fun ListeningView(
                     .offset { driftOffset() },
                 contentAlignment = Alignment.Center,
             ) {
-                cover(if (landscape) Modifier.size(minOf(h * 0.78f, w * 0.6f)) else Modifier.fillMaxWidth(0.94f))
+                record(if (landscape) Modifier.size(minOf(h * 0.78f, w * 0.6f)) else Modifier.fillMaxWidth(0.94f))
             }
 
             layout == ListeningLayout.POSTER -> Column(
@@ -239,10 +332,14 @@ private fun ListeningView(
                     .padding(top = 40.dp, bottom = maxHeight * 0.08f)
                     .offset { driftOffset() },
             ) {
-                cover(Modifier.size(if (landscape) h * 0.26f else w * 0.44f))
+                record(Modifier.size(if (landscape) h * 0.26f else w * 0.44f))
                 Spacer(Modifier.weight(1f))
-                TrackWords(model, track, TextAlign.Start, titleMaxSp = 150f)
+                TrackWords(model, track, TextAlign.Start, titleMaxSp = 150f, big = big, signalPanel = signalPanel, accent = palette.accent)
             }
+
+            layout == ListeningLayout.LYRICS -> LyricsLayout(
+                model, track, landscape, w, h, clock, { driftOffset() }, big,
+            ) { m -> record(m) }
 
             landscape -> Row(
                 Modifier
@@ -255,8 +352,12 @@ private fun ListeningView(
                 val vinyl = layout == ListeningLayout.VINYL
                 record(Modifier.size(if (vinyl) minOf(h * 0.82f, w * 0.48f) else minOf(h * 0.70f, w * 0.42f)))
                 Spacer(Modifier.width(w * 0.06f))
-                Box(Modifier.weight(1f)) {
-                    TrackWords(model, track, TextAlign.Start, titleMaxSp = 64f)
+                Column(Modifier.weight(1f)) {
+                    TrackWords(model, track, TextAlign.Start, titleMaxSp = 64f, big = big, signalPanel = signalPanel, accent = palette.accent)
+                    if (deckOn) {
+                        Spacer(Modifier.height(24.dp))
+                        QueueDeck(model, queue, index, palette.accent)
+                    }
                 }
             }
 
@@ -267,13 +368,136 @@ private fun ListeningView(
                     .offset { driftOffset() },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.weight(if (clock) 1.15f else 0.8f))
-                record(Modifier.fillMaxWidth(if (layout == ListeningLayout.VINYL) 0.98f else 0.92f))
+                // The words sit in a slot of their own, top-aligned, so a longer title grows
+                // down into the slot's spare room and never moves the record. (Weighted
+                // spacers on both sides of the words let the record rise as they grew.) The
+                // weights put the record where a one-line title used to leave it.
+                Spacer(Modifier.weight(portraitTopWeight(clock, deckOn, signalPanel)))
+                // With the queue deck on, the record steps back to leave it room.
+                record(Modifier.fillMaxWidth(if (layout != ListeningLayout.VINYL) 0.92f else if (deckOn) 0.80f else 0.98f))
                 Spacer(Modifier.height(52.dp))
-                TrackWords(model, track, TextAlign.Center, titleMaxSp = 54f)
-                Spacer(Modifier.weight(1f))
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    TrackWords(model, track, TextAlign.Center, titleMaxSp = 54f, big = big, signalPanel = signalPanel, accent = palette.accent)
+                }
+                if (deckOn) QueueDeck(model, queue, index, palette.accent, Modifier.padding(top = 6.dp, bottom = 26.dp))
             }
         }
+
+        // The shutter, and what it saved.
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = flash.value }.background(Color.White))
+        toast?.let { line ->
+            Text(
+                line,
+                color = Color.White.copy(alpha = 0.9f),
+                fontFamily = MonoFont,
+                fontSize = 14.sp,
+                letterSpacing = 0.08.em,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 40.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50))
+                    .padding(horizontal = 22.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The lyric sheet layout: a small cover and the song's name above, the words rolling below
+ * in the album's own face (landscape: the cover and name left, the words right). Without
+ * lyrics for the track the sheet shows a rest and the layout still looks finished.
+ */
+@Composable
+private fun LyricsLayout(
+    model: PanelModel,
+    track: LocalTrack?,
+    landscape: Boolean,
+    w: Dp,
+    h: Dp,
+    clock: Boolean,
+    drift: () -> IntOffset,
+    big: Boolean,
+    cover: @Composable (Modifier) -> Unit,
+) {
+    val title = track?.title ?: "Nothing playing"
+    val face = faceFor(listOfNotNull(track?.genre), null, title, track?.album ?: track?.id ?: title)
+    val sheet: @Composable (Modifier, Float) -> Unit = { m, sp ->
+        LyricSheet(model, track, face, m, TextAlign.Start, sizeSp = if (big) sp * 1.2f else sp) { NoLyrics() }
+    }
+    if (landscape) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = w * 0.07f)
+                .padding(top = if (clock) 40.dp else 0.dp)
+                .offset { drift() },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(0.38f)) {
+                cover(Modifier.size(minOf(h * 0.46f, w * 0.3f)))
+                Spacer(Modifier.height(24.dp))
+                LyricHeader(track, face)
+                Spacer(Modifier.height(20.dp))
+                ProgressHairline(model, track, 0.9f)
+            }
+            Spacer(Modifier.width(w * 0.05f))
+            sheet(Modifier.weight(0.62f).fillMaxHeight(), 44f)
+        }
+    } else {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = w * 0.07f)
+                .padding(top = if (clock) 124.dp else 48.dp, bottom = h * 0.04f)
+                .offset { drift() },
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                cover(Modifier.size(w * 0.20f))
+                Spacer(Modifier.width(20.dp))
+                Box(Modifier.weight(1f)) { LyricHeader(track, face) }
+            }
+            Spacer(Modifier.height(8.dp))
+            sheet(Modifier.weight(1f).fillMaxWidth(), 40f)
+            ProgressHairline(model, track, 1f)
+        }
+    }
+}
+
+/** The song's name above its lyrics: the artist in spaced capitals, the title in its face. */
+@Composable
+private fun LyricHeader(track: LocalTrack?, face: Face) {
+    Column(Modifier.fillMaxWidth()) {
+        val artist = track?.artist
+        if (!artist.isNullOrBlank()) {
+            Text(
+                artist.uppercase(),
+                color = Color.White.copy(alpha = 0.7f),
+                fontFamily = AppFont,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+                letterSpacing = 0.3.em,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        FittedTitle(track?.title ?: "Nothing playing", face, 34f, TextAlign.Start, Color.White, Modifier)
+    }
+}
+
+/** The sheet's rest: no words for this track, said quietly. */
+@Composable
+private fun NoLyrics() {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text("♪", color = Color.White.copy(alpha = 0.22f), fontSize = 72.sp, fontFamily = AppFont)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "no lyrics for this track",
+            color = Color.White.copy(alpha = 0.32f),
+            fontFamily = MonoFont,
+            fontSize = 13.sp,
+            letterSpacing = 0.14.em,
+        )
     }
 }
 
@@ -310,10 +534,19 @@ private fun BoxScope.RoomLight(palette: AlbumPalette, living: LivingArt, seed: I
 
 /**
  * Artist, title, album, the track's progress as a hairline and the signal path — the
- * whole block crossing over to the next track's words when the track changes.
+ * whole block crossing over to the next track's words when the track changes. [big] adds
+ * the times in large figures; [signalPanel] sets the signal path as lit stages.
  */
 @Composable
-private fun TrackWords(model: PanelModel, track: LocalTrack?, align: TextAlign, titleMaxSp: Float) {
+private fun TrackWords(
+    model: PanelModel,
+    track: LocalTrack?,
+    align: TextAlign,
+    titleMaxSp: Float,
+    big: Boolean = false,
+    signalPanel: Boolean = false,
+    accent: Color = Color.White,
+) {
     val remote by model.state.collectAsState()
     val horizontal = if (align == TextAlign.Center) Alignment.CenterHorizontally else Alignment.Start
     Column(Modifier.fillMaxWidth(), horizontalAlignment = horizontal) {
@@ -357,43 +590,70 @@ private fun TrackWords(model: PanelModel, track: LocalTrack?, align: TextAlign, 
         }
 
         Spacer(Modifier.height(30.dp))
-        // The track's progress: a hairline, no knob — something to glance at, not to drag.
-        val dur = remote?.durationMs?.takeIf { it > 0 } ?: track?.durationMs ?: 0L
-        val target = if (dur > 0) ((remote?.positionMs ?: 0L).toFloat() / dur).coerceIn(0f, 1f) else 0f
-        // the poll moves once a second; glide between readings rather than step
-        val fraction by animateFloatAsState(target, tween(1_000, easing = LinearEasing), label = "listeningProgress")
-        Box(
-            Modifier
-                .fillMaxWidth(if (align == TextAlign.Center) 0.46f else 0.7f)
-                .height(2.dp)
-                .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(1.dp)),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth(fraction)
-                    .height(2.dp)
-                    .background(Color.White.copy(alpha = 0.78f), RoundedCornerShape(1.dp)),
-            )
-        }
+        ProgressHairline(model, track, if (align == TextAlign.Center) 0.46f else 0.7f, align)
 
-        val signal = signalLine(
-            mpdBadgeQuality(track, remote?.outputFormat)?.label,
-            remote?.outputDeviceName,
-        )
-        if (signal.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
+        if (big) {
+            // For reading from across the room: where we are, and how long is left.
+            val dur = remote?.durationMs?.takeIf { it > 0 } ?: track?.durationMs ?: 0L
+            val pos = remote?.positionMs ?: 0L
+            Spacer(Modifier.height(14.dp))
             Text(
-                signal,
-                color = Color.White.copy(alpha = 0.46f),
+                "${formatMs(pos)}  /  ${formatMs(dur)}",
+                color = Color.White.copy(alpha = 0.82f),
                 fontFamily = MonoFont,
-                fontSize = 12.sp,
-                letterSpacing = 0.14.em,
+                fontSize = 32.sp,
+                letterSpacing = 0.06.em,
                 textAlign = align,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+
+        if (signalPanel) {
+            Spacer(Modifier.height(18.dp))
+            SignalPath(model, Modifier.fillMaxWidth(), accent = accent)
+        } else {
+            val signal = signalLine(
+                mpdBadgeQuality(track, remote?.outputFormat)?.label,
+                remote?.outputDeviceName,
+            )
+            if (signal.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    signal,
+                    color = Color.White.copy(alpha = 0.46f),
+                    fontFamily = MonoFont,
+                    fontSize = if (big) 16.sp else 12.sp,
+                    letterSpacing = 0.14.em,
+                    textAlign = align,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+/** The track's progress: a hairline, no knob — something to glance at, not to drag. */
+@Composable
+private fun ProgressHairline(model: PanelModel, track: LocalTrack?, widthFraction: Float, align: TextAlign = TextAlign.Start) {
+    val remote by model.state.collectAsState()
+    val dur = remote?.durationMs?.takeIf { it > 0 } ?: track?.durationMs ?: 0L
+    val target = if (dur > 0) ((remote?.positionMs ?: 0L).toFloat() / dur).coerceIn(0f, 1f) else 0f
+    // the poll moves once a second; glide between readings rather than step
+    val fraction by animateFloatAsState(target, tween(1_000, easing = LinearEasing), label = "listeningProgress")
+    Box(
+        Modifier
+            .fillMaxWidth(widthFraction)
+            .height(2.dp)
+            .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(1.dp)),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(fraction)
+                .height(2.dp)
+                .background(Color.White.copy(alpha = 0.78f), RoundedCornerShape(1.dp)),
+        )
     }
 }
 
@@ -401,3 +661,15 @@ private fun TrackWords(model: PanelModel, track: LocalTrack?, align: TextAlign, 
 internal fun signalLine(quality: String?, device: String?): String =
     listOfNotNull(quality?.trim()?.takeIf { it.isNotEmpty() }, device?.trim()?.takeIf { it.isNotEmpty() })
         .joinToString("  →  ")
+
+/**
+ * The weight of the space above the record in the portrait layout, against the words' slot
+ * below it (weight 1). The record sits where a one-line title used to leave it; the queue
+ * deck and the signal panel each need more of the height for the words and what is
+ * under them, so they take it from the space above.
+ */
+internal fun portraitTopWeight(clock: Boolean, deck: Boolean, signalPanel: Boolean): Float = when {
+    deck -> if (clock) 0.28f else 0.20f
+    signalPanel -> if (clock) 0.42f else 0.30f
+    else -> if (clock) 0.53f else 0.40f
+}

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Slideshow
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material3.Icon
@@ -209,6 +210,9 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
 
                 // ── Listening mode ──
                 ListeningCard(model)
+
+                // ── The hi-fi station ──
+                StationCard(model)
 
                 // ── Screensaver ──
                 ScreensaverCard(model)
@@ -591,6 +595,104 @@ private fun ListeningCard(model: PanelModel) {
             }
             Hint("Burn-in drift (in the screensaver settings below) moves this view too.")
             PillButton("Preview now", icon = Icons.Default.PlayArrow, onClick = { model.listeningNow.value = true })
+        }
+    }
+}
+
+/**
+ * The hi-fi station's additions — each one a switch, each off until it is switched on, and
+ * none of them replaces anything the panel already does.
+ */
+@Composable
+private fun StationCard(model: PanelModel) {
+    val settings = model.settings
+    val scope = rememberCoroutineScope()
+    val tonearm by settings.tonearm.collectAsState(initial = false)
+    val tonearmSeek by settings.tonearmSeek.collectAsState(initial = false)
+    val deck by settings.queueDeck.collectAsState(initial = false)
+    val postcards by settings.postcards.collectAsState(initial = false)
+    val sleeve by settings.sleeveFlip.collectAsState(initial = false)
+    val gestures by settings.touchGestures.collectAsState(initial = false)
+    val menus by settings.rowMenus.collectAsState(initial = false)
+    val crates by settings.crateMode.collectAsState(initial = false)
+    val signal by settings.signalPanel.collectAsState(initial = false)
+    val sleep by settings.sleepTimer.collectAsState(initial = false)
+    val big by settings.bigReadouts.collectAsState(initial = false)
+    val banner by settings.statusBanner.collectAsState(initial = false)
+    val deepIdle by settings.deepIdle.collectAsState(initial = "off")
+    val deepMin by settings.deepIdleMin.collectAsState(initial = 60)
+
+    SettingsCard(Icons.Default.Album, "Hi-fi station",
+        "Extras for a panel that plays all day. Each is off until you switch it on, and nothing here changes what the panel already does.") {
+        Label("The turntable")
+        ToggleRow("Tonearm", "On the Vinyl layout: the arm swings onto the record when it plays, rides in as the side goes, lifts and parks when it stops. Rings in the grooves mark the tracks.", tonearm) { v ->
+            scope.launch { settings.setTonearm(v) }
+        }
+        if (tonearm) {
+            ToggleRow("Touch the tonearm", "Take the arm in a finger and set it down on another track or part of one.", tonearmSeek) { v ->
+                scope.launch { settings.setTonearmSeek(v) }
+            }
+        }
+        ToggleRow("Queue deck", "On the Vinyl layout: the next records lean beside the platter. Tap one to play it, drag one to change the order.", deck) { v ->
+            scope.launch { settings.setQueueDeck(v) }
+        }
+        Hint("Both need the Vinyl layout (Listening mode above). The lyric sheet is a layout of its own, in the same list.")
+
+        Label("Keepsakes")
+        ToggleRow("Postcards", "Hold the cover in the listening view to save a postcard — cover, title, the signal path and the date — to Pictures/CAMusic.", postcards) { v ->
+            scope.launch { settings.setPostcards(v) }
+        }
+        ToggleRow("Back of the sleeve", "Hold the cover in the player to turn it over: the album's tracks, the playing one lit. Touch one to play it.", sleeve) { v ->
+            scope.launch { settings.setSleeveFlip(v) }
+        }
+
+        Label("Touch")
+        ToggleRow("Touch gestures", "Swipe the cover to skip. Swipe a queue row away, or drag it by its handle to reorder. Drag the cover's edge for volume, where MPD has one.", gestures) { v ->
+            scope.launch { settings.setTouchGestures(v) }
+        }
+        ToggleRow("Row menus", "Hold a song or a queue row for Play next, Add to queue, Go to album and the like.", menus) { v ->
+            scope.launch { settings.setRowMenus(v) }
+        }
+        ToggleRow("Crates", "A way to browse the library as records standing in bins, beside the usual grid.", crates) { v ->
+            scope.launch { settings.setCrateMode(v) }
+        }
+
+        Label("The signal")
+        ToggleRow("Signal path", "Source, decoder, loudness, volume and output as lit stages, and a BIT-PERFECT lamp when nothing MPD reports changes the bits. It reads what MPD and the library say; it cannot see inside a DAC driver.", signal) { v ->
+            scope.launch { settings.setSignalPanel(v) }
+        }
+        ToggleRow("Sleep timer", "A chip by the loudness chip: stop at the end of the album, or after 30, 60 or 90 minutes.", sleep) { v ->
+            scope.launch { settings.setSleepTimer(v) }
+        }
+        ToggleRow("Big readouts", "Times and the clock set large, for reading from across the room.", big) { v ->
+            scope.launch { settings.setBigReadouts(v) }
+        }
+        ToggleRow("Connection banner", "A calm banner with a Retry when MPD or Jellyfin cannot be reached.", banner) { v ->
+            scope.launch { settings.setStatusBanner(v) }
+        }
+
+        Label("Deep idle")
+        SegmentedControl(
+            options = listOf("off", "clock", "screen_off"),
+            selected = deepIdle,
+            label = { when (it) { "clock" -> "Dim clock"; "screen_off" -> "Screen off"; else -> "Off" } },
+            onSelect = { v -> scope.launch { settings.setDeepIdle(v) } },
+        )
+        Hint(
+            when (deepIdle) {
+                "clock" -> "After a long time untouched the panel goes to a dim clock, in a new place each minute. A touch wakes it."
+                "screen_off" -> "After a long time untouched the screen switches off (X power saving). A touch wakes it."
+                else -> "Past the listening view and the gallery, for a panel that stays on for days."
+            },
+        )
+        if (deepIdle != "off") {
+            Label("After")
+            SegmentedControl(
+                options = listOf(15, 30, 60, 120),
+                selected = deepMin,
+                label = { if (it >= 60) "${it / 60} h" else "$it min" },
+                onSelect = { v -> scope.launch { settings.setDeepIdleMin(v) } },
+            )
         }
     }
 }

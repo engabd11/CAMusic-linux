@@ -3,9 +3,17 @@ package com.engabd.sendpin.linux
 import com.engabd.sendpin.audio.LocalTrack
 import com.engabd.sendpin.audio.RemoteState
 import com.engabd.sendpin.jellyfin.JellyfinClient
+import com.engabd.sendpin.library.Capability
 import com.engabd.sendpin.library.JellyfinSource
 import com.engabd.sendpin.library.MusicSource
+import com.engabd.sendpin.linux.station.SleepAction
+import com.engabd.sendpin.linux.station.SleepChoice
+import com.engabd.sendpin.linux.station.SleepTimer
+import com.engabd.sendpin.linux.station.sideOf
+import com.engabd.sendpin.linux.station.sleepAction
+import com.engabd.sendpin.linux.station.startSleep
 import com.engabd.sendpin.ma.MaItem
+import com.engabd.sendpin.ma.MaLyrics
 import com.engabd.sendpin.mpd.MpdClient
 import com.engabd.sendpin.mpd.MpdRemote
 import kotlinx.coroutines.CancellationException
@@ -59,6 +67,18 @@ class PanelModel(val settings: LinuxSettings) {
     val state = MutableStateFlow<RemoteState?>(null)
     /** Status line for the panes: what is connected and what is not. */
     val statusLine = MutableStateFlow("")
+
+    /**
+     * Whether MPD is answering. Goes false only after a few polls in a row get nothing, so a
+     * dropped packet never reads as an outage; true again at the first answer.
+     */
+    val mpdUp = MutableStateFlow(true)
+    /** Why Jellyfin could not be reached when the clients were last built, or null if it could. */
+    val jellyfinProblem = MutableStateFlow<String?>(null)
+    private var mpdMisses = 0
+
+    /** The sleep timer, if one is running. */
+    val sleep = MutableStateFlow<SleepTimer?>(null)
 
     // Clients as StateFlows so panes recompose the moment they come up — a plain
     // var set after first composition is invisible to Compose (the Library tab
@@ -170,6 +190,9 @@ class PanelModel(val settings: LinuxSettings) {
             replayGain.value = client.replayGainMode()
             statusLine.value = if (err == null) "MPD connected — $mpdAddr" else "MPD: ${err.message}"
             connectionLine = statusLine.value
+            mpdUp.value = err == null
+            mpdMisses = 0
+            jellyfinProblem.value = null
 
             if (jfUrlV.isNotBlank() && jfTokenV.isNotBlank()) {
                 jellyfin = JellyfinClient(
@@ -186,6 +209,7 @@ class PanelModel(val settings: LinuxSettings) {
                 // sits on "Configure Jellyfin" even with a healthy client.
                 _source.value = JellyfinSource(jellyfin!!)
                 val jfErr = jellyfin?.pingError()
+                jellyfinProblem.value = jfErr
                 statusLine.value = (statusLine.value + "  ·  " +
                     if (jfErr == null) "Jellyfin connected" else "Jellyfin: $jfErr")
                 connectionLine = statusLine.value
@@ -210,6 +234,12 @@ class PanelModel(val settings: LinuxSettings) {
                     // Taken straight after the answer: the reporter extrapolates from it.
                     val readAt = System.currentTimeMillis()
                     state.value = s
+                    if (s != null) {
+                        mpdMisses = 0
+                        mpdUp.value = true
+                    } else if (++mpdMisses >= MPD_MISSES_FOR_OUTAGE) {
+                        mpdUp.value = false
+                    }
                     // Read after the status, so a track change between the two shows up
                     // as a mismatch below rather than as the wrong song.
                     val playingFile = if (s != null && !s.stopped) {
@@ -227,6 +257,7 @@ class PanelModel(val settings: LinuxSettings) {
                     }
                     reading?.let { readings.trySend(it) }
                 }
+                sleepTick(state.value)
                 // Another client can change MPD's loudness under us (see [replayGain]);
                 // one extra command every 10 s keeps the readback honest without
                 // doubling the poll's traffic.
@@ -405,10 +436,118 @@ class PanelModel(val settings: LinuxSettings) {
     // reconcileQueueFromMpd(), called every poll tick, is what actually
     // resyncs it — see that function's doc comment for why it re-orders the
     // existing list instead of rebuilding it from MPD's answer directly.
-    suspend fun removeFromQueue(index: Int) = guarded("Remove") { remote?.removeAt(index) }
-    suspend fun moveInQueue(from: Int, to: Int) = guarded("Move") { remote?.move(from, to) }
+    suspend fun removeFromQueue(index: Int) = guarded("Remove") { remote?.removeAt(index) }.also { wake.trySend(Unit) }
+    suspend fun moveInQueue(from: Int, to: Int) = guarded("Move") { remote?.move(from, to) }.also { wake.trySend(Unit) }
     suspend fun shuffleQueue() = guarded("Shuffle") { remote?.shuffleQueue() }
     suspend fun clearQueue() = guarded("Clear") { remote?.clear() }
+
+    /** MPD's volume, 0..1, when it has a mixer to set (a fixed output answers nothing). */
+    suspend fun setVolume(volume: Float) = guarded("Volume") { remote?.setVolume(volume) }
+
+    // ── Adding to the queue (the row menus) ────────────────────────────────
+
+    /**
+     * Put [tracks] in the queue, right after the playing one when [next], else at the end,
+     * without touching what plays. The same path mapping as [playAlbum]; tracks that will
+     * not map are skipped, and the status line says so when none did.
+     */
+    suspend fun enqueue(tracks: List<MaItem>, next: Boolean) =
+        guarded(if (next) "Play next" else "Add to queue") {
+            val r = remote ?: return@guarded
+            val queueTracks = mpdTracksFor(tracks)
+            if (queueTracks.isEmpty()) {
+                statusLine.value = "No track mapped to MPD — check the path prefix in Settings"
+                return@guarded
+            }
+            val ids = tracks.mapNotNull { t -> t.parentId?.takeIf { it.isNotBlank() }?.let { t.itemId to it } }
+            if (ids.isNotEmpty()) albumIds.value = albumIds.value + ids
+            queueLock.withLock {
+                val playing = state.value?.index?.takeIf { it >= 0 }
+                if (next) {
+                    val after = playing ?: (queue.value.size - 1)
+                    r.playNext(queueTracks, after)
+                    val at = (after + 1).coerceIn(0, queue.value.size)
+                    queue.value = queue.value.take(at) + queueTracks + queue.value.drop(at)
+                } else {
+                    r.addToQueue(queueTracks)
+                    queue.value = queue.value + queueTracks
+                }
+            }
+            wake.trySend(Unit)
+        }
+
+    /** A queue row's "Play next": move the entry at [from] to just after the playing one. */
+    suspend fun playQueueEntryNext(from: Int) {
+        val playing = state.value?.index?.takeIf { it >= 0 } ?: return
+        val to = if (from > playing) playing + 1 else playing
+        if (from != to) moveInQueue(from, to)
+    }
+
+    // ── Lyrics (the lyric sheet) ───────────────────────────────────────────
+
+    private val lyricCache = object : LinkedHashMap<String, MaLyrics?>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MaLyrics?>?) = size > 48
+    }
+
+    /**
+     * The lyrics for [track], or null when the library has none. A track this panel queued
+     * carries its Jellyfin id; one queued by another MPD client is found by name. Remembered
+     * (including "none"), so a track is asked about once; a failed request is not remembered.
+     */
+    suspend fun lyricsFor(track: LocalTrack): MaLyrics? {
+        val src = source.value ?: return null
+        if (!src.has(Capability.LYRICS)) return null
+        val key = track.scrobbleId ?: track.id
+        synchronized(lyricCache) { if (lyricCache.containsKey(key)) return lyricCache[key] }
+        val found = try {
+            val id = track.id.takeIf { it != track.scrobbleId }
+                ?: pickLyricMatch(
+                    src.search(listOfNotNull(track.artist, track.title).joinToString(" "), 12).tracks,
+                    track.title, track.artist,
+                )?.itemId
+            id?.let { src.lyrics(it) }?.takeIf { it.text.isNotBlank() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return null
+        }
+        synchronized(lyricCache) { lyricCache[key] = found }
+        return found
+    }
+
+    // ── The sleep timer ─────────────────────────────────────────────────────
+
+    /** Start (or, with [SleepChoice.OFF], cancel) the sleep timer. */
+    fun setSleep(choice: SleepChoice) {
+        val running = sleep.value
+        val s = state.value
+        val side = s?.index?.takeIf { it >= 0 }?.let { sideOf(queue.value, it, albumIds.value) }
+        sleep.value = startSleep(choice, System.currentTimeMillis(), side?.let { it.firstIndex + it.size - 1 })
+        // Cancelling an album sleep MPD was already asked to honour takes the request back.
+        if (running?.armed == true) scope.launch { guarded("Sleep") { remote?.stopAfterCurrent(false) } }
+    }
+
+    private suspend fun sleepTick(s: RemoteState?) {
+        val t = sleep.value ?: return
+        when (sleepAction(t, s, System.currentTimeMillis())) {
+            SleepAction.NONE -> Unit
+            SleepAction.PAUSE -> {
+                guarded("Sleep") { remote?.pause() }
+                sleep.value = null
+                wake.trySend(Unit)
+            }
+            SleepAction.ARM_STOP_AFTER_CURRENT -> {
+                if (guarded("Sleep") { remote?.stopAfterCurrent(true) }) {
+                    sleep.value = t.copy(armed = true)
+                } else {
+                    // An MPD too old for `single oneshot`: pause as the last track runs out instead.
+                    val left = ((s?.durationMs ?: 0L) - (s?.positionMs ?: 0L)).coerceAtLeast(0L)
+                    sleep.value = t.copy(deadlineMs = System.currentTimeMillis() + left + 300L, sideEnd = null)
+                }
+            }
+            SleepAction.CLEAR -> sleep.value = null
+        }
+    }
 
     /**
      * Queue a Jellyfin album through MPD: resolve every item's file path, map to
@@ -418,6 +557,23 @@ class PanelModel(val settings: LinuxSettings) {
      */
     suspend fun playAlbum(album: MaItem, tracks: List<MaItem>, startIndex: Int = 0) =
         guarded("Play") { queueAndPlay(album, tracks, startIndex) }
+
+    /** [tracks] as MPD queue entries: path mapped, the ones that will not map dropped. */
+    private suspend fun mpdTracksFor(tracks: List<MaItem>): List<LocalTrack> {
+        if (jellyfin == null || mpd == null) return emptyList()
+        val paths = JellyfinPaths.paths(
+            baseUrl = jfUrl.value,
+            token = settings.jfToken.first(),
+            deviceId = settings.deviceId.first(),
+            ids = tracks.map { it.itemId },
+        )
+        val prefix = settings.jellyfinPathPrefix.first()
+        return tracks.mapNotNull { item ->
+            val jfPath = paths[item.itemId] ?: return@mapNotNull null
+            val mpdPath = JellyfinToMpd.toMpdPath(jfPath, prefix) ?: return@mapNotNull null
+            JellyfinToMpd.toLocalTrack(item, mpdPath)
+        }
+    }
 
     private suspend fun queueAndPlay(album: MaItem, tracks: List<MaItem>, startIndex: Int) {
         val jf = jellyfin ?: return
@@ -577,4 +733,22 @@ internal fun identify(queue: List<LocalTrack>, index: Int, playingFile: String?)
     val entry = queue.getOrNull(index) ?: return Identity.Unverified
     if (playingFile == null || entry.scrobbleId != playingFile) return Identity.Unverified
     return Identity.Known(entry.id.takeIf { it != entry.scrobbleId })
+}
+
+/** Polls in a row that must get no answer from MPD before the panel calls it an outage. */
+internal const val MPD_MISSES_FOR_OUTAGE = 3
+
+/**
+ * The library track that [title] by [artist] most likely is, among search [hits]: the same
+ * title (case aside) by the same artist when both are known, else the first of that title.
+ * Pure for the tests.
+ */
+internal fun pickLyricMatch(hits: List<MaItem>, title: String, artist: String?): MaItem? {
+    val sameTitle = hits.filter { it.name.trim().equals(title.trim(), ignoreCase = true) }
+    if (artist.isNullOrBlank()) return sameTitle.firstOrNull()
+    val byArtist = sameTitle.firstOrNull { hit ->
+        val by = hit.subtitle?.trim().orEmpty()
+        by.isNotEmpty() && (by.contains(artist.trim(), ignoreCase = true) || artist.contains(by, ignoreCase = true))
+    }
+    return byArtist ?: sameTitle.firstOrNull()
 }

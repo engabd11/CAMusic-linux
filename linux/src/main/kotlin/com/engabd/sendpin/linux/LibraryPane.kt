@@ -43,6 +43,7 @@ import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Album
@@ -59,6 +60,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
@@ -97,6 +99,11 @@ import com.engabd.sendpin.linux.ui.Eyebrow
 import com.engabd.sendpin.linux.ui.OnScreenKeyboard
 import com.engabd.sendpin.linux.ui.OnScreenKeyboardKey
 import com.engabd.sendpin.linux.ui.PageGutter
+import com.engabd.sendpin.linux.station.CrateBin
+import com.engabd.sendpin.linux.station.CratesScreen
+import com.engabd.sendpin.linux.station.LocalActionMenu
+import com.engabd.sendpin.linux.station.LocalTrackMenu
+import com.engabd.sendpin.linux.station.libraryTrackActions
 import com.engabd.sendpin.linux.ui.PageHeader
 import com.engabd.sendpin.linux.ui.PanelShapes
 import com.engabd.sendpin.linux.ui.PillButton
@@ -160,6 +167,8 @@ internal sealed interface LibraryRoute {
     data class Artist(val item: MaItem) : LibraryRoute { override val key = "artist:${item.itemId}" }
     data class Playlist(val item: MaItem) : LibraryRoute { override val key = "playlist:${item.itemId}" }
     data class Genre(val item: MaItem) : LibraryRoute { override val key = "genre:${item.itemId}" }
+    /** The albums as records in bins (Settings → Crates). */
+    data object Crates : LibraryRoute { override val key = "crates" }
 }
 
 /** Push [route], unless it is already on top (a double tap must not stack two copies). */
@@ -195,6 +204,7 @@ class LibraryState {
     internal val browse = mutableStateMapOf<LibraryCategory, List<MaItem>>()
     internal val exhausted = mutableStateMapOf<LibraryCategory, Boolean>()
     internal var favorites by mutableStateOf<MaSearchResults?>(null)
+    internal var crates by mutableStateOf<List<CrateBin>?>(null)
     internal var query by mutableStateOf("")
     private var bound: MusicSource? = null
 
@@ -225,6 +235,7 @@ class LibraryState {
         browse.clear()
         exhausted.clear()
         favorites = null
+        crates = null
         query = ""
     }
 }
@@ -276,45 +287,78 @@ fun LibraryPane(modifier: Modifier, model: PanelModel, state: LibraryState = rem
     val open: (LibraryRoute) -> Unit = { state.push(it) }
     val back: () -> Unit = { state.pop() }
 
+    // The station's additions: Crates beside the grid, and a menu on a held song. Both off
+    // until switched on in Settings.
+    val crateMode by model.settings.crateMode.collectAsState(initial = false)
+    val rowMenus by model.settings.rowMenus.collectAsState(initial = false)
+    val menus = LocalActionMenu.current
+    val trackMenu: ((MaItem) -> Unit)? = if (rowMenus && menus != null) { t ->
+        menus.show(
+            t.name, t.subtitle,
+            libraryTrackActions(
+                hasAlbum = !t.parentId.isNullOrBlank(),
+                hasArtist = !t.subtitle.isNullOrBlank(),
+                onPlayNext = { scope.launch { model.enqueue(listOf(t), next = true) } },
+                onAddToQueue = { scope.launch { model.enqueue(listOf(t), next = false) } },
+                onAlbum = {
+                    scope.launch {
+                        runCatching { source.albumDetail(t.parentId.orEmpty()).first }.getOrNull()
+                            ?.let { open(LibraryRoute.Album(it)) }
+                    }
+                },
+                onArtist = {
+                    scope.launch {
+                        runCatching { source.search(t.subtitle.orEmpty(), 8).artists }.getOrNull()
+                            ?.firstOrNull { it.name.equals(t.subtitle, ignoreCase = true) }
+                            ?.let { open(LibraryRoute.Artist(it)) }
+                    }
+                },
+            ),
+        )
+    } else null
+
     val pageTransitions by model.settings.pageTransitions.collectAsState(initial = true)
     val holder = rememberSaveableStateHolder()
-    Box(modifier) {
-        // A deeper page slides in from the right over the one it came from; going back
-        // (or home) runs the same move the other way.
-        AnimatedContent(
-            targetState = RouteAt(state.stack.last(), state.stack.size),
-            contentKey = { it.route.key },
-            transitionSpec = {
-                if (!pageTransitions) {
-                    EnterTransition.None togetherWith ExitTransition.None
-                } else {
-                    val forward = targetState.depth >= initialState.depth
-                    val dir = if (forward) 1 else -1
-                    (fadeIn(tween(260, delayMillis = 40)) +
-                        slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { dir * it / 5 }) togetherWith
-                        (fadeOut(tween(180)) +
-                            slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -dir * it / 10 })
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-            label = "libraryRoute",
-        ) { at ->
-            val route = at.route
-            holder.SaveableStateProvider(route.key) {
-                when (route) {
-                    LibraryRoute.Home -> HomeScreen(source, state, open, play)
-                    LibraryRoute.Search -> SearchScreen(source, state, open, play, back)
-                    is LibraryRoute.Browse -> BrowseScreen(route.category, source, state, now, open, play, back)
-                    is LibraryRoute.Album -> AlbumScreen(route.item, source, now, open, play, back)
-                    is LibraryRoute.Artist -> ArtistScreen(route.item, source, now, open, play, back)
-                    is LibraryRoute.Playlist -> TrackListScreen(
-                        header = route.item, eyebrow = "Playlist", now = now, play = play, back = back,
-                        load = { source.playlistTracks(route.item.itemId) },
-                    )
-                    is LibraryRoute.Genre -> TrackListScreen(
-                        header = route.item, eyebrow = "Genre", now = now, play = play, back = back,
-                        load = { source.songsByGenre(route.item.name) },
-                    )
+    CompositionLocalProvider(LocalTrackMenu provides trackMenu) {
+        Box(modifier) {
+            // A deeper page slides in from the right over the one it came from; going back
+            // (or home) runs the same move the other way.
+            AnimatedContent(
+                targetState = RouteAt(state.stack.last(), state.stack.size),
+                contentKey = { it.route.key },
+                transitionSpec = {
+                    if (!pageTransitions) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        val forward = targetState.depth >= initialState.depth
+                        val dir = if (forward) 1 else -1
+                        (fadeIn(tween(260, delayMillis = 40)) +
+                            slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { dir * it / 5 }) togetherWith
+                            (fadeOut(tween(180)) +
+                                slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -dir * it / 10 })
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                label = "libraryRoute",
+            ) { at ->
+                val route = at.route
+                holder.SaveableStateProvider(route.key) {
+                    when (route) {
+                        LibraryRoute.Home -> HomeScreen(source, state, open, play, crates = crateMode)
+                        LibraryRoute.Crates -> CratesScreen(source, state, open, back)
+                        LibraryRoute.Search -> SearchScreen(source, state, open, play, back)
+                        is LibraryRoute.Browse -> BrowseScreen(route.category, source, state, now, open, play, back)
+                        is LibraryRoute.Album -> AlbumScreen(route.item, source, now, open, play, back)
+                        is LibraryRoute.Artist -> ArtistScreen(route.item, source, now, open, play, back)
+                        is LibraryRoute.Playlist -> TrackListScreen(
+                            header = route.item, eyebrow = "Playlist", now = now, play = play, back = back,
+                            load = { source.playlistTracks(route.item.itemId) },
+                        )
+                        is LibraryRoute.Genre -> TrackListScreen(
+                            header = route.item, eyebrow = "Genre", now = now, play = play, back = back,
+                            load = { source.songsByGenre(route.item.name) },
+                        )
+                    }
                 }
             }
         }
@@ -339,6 +383,8 @@ private fun lookOf(c: LibraryCategory): CategoryLook = when (c) {
     LibraryCategory.SONGS -> CategoryLook(c.label, Icons.Default.MusicNote, listOf(Color(0xFF8EDB4F), Color(0xFF2B8656)))
 }
 
+private val CratesLook = CategoryLook("Crates", Icons.Default.Inventory2, listOf(Color(0xFFC98B52), Color(0xFF5A3417)))
+
 private val ShuffleLook = CategoryLook("Shuffle all", Icons.Default.Shuffle, listOf(Color(0xFF5C7CFA), Color(0xFF1FB5C9)))
 
 @Composable
@@ -347,6 +393,7 @@ private fun HomeScreen(
     state: LibraryState,
     open: (LibraryRoute) -> Unit,
     play: (MaItem, List<MaItem>, Int) -> Unit,
+    crates: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -384,6 +431,7 @@ private fun HomeScreen(
             }
             item(key = "cards") {
                 CategoryGrid(
+                    onCrates = if (crates) ({ open(LibraryRoute.Crates) }) else null,
                     onCategory = { open(LibraryRoute.Browse(it)) },
                     onShuffle = {
                         scope.launch {
@@ -508,9 +556,10 @@ private fun SearchBar(onClick: () -> Unit) {
 
 /** The category cards, four to a row — two rows fill the panel's width with colour. */
 @Composable
-private fun CategoryGrid(onCategory: (LibraryCategory) -> Unit, onShuffle: () -> Unit) {
+private fun CategoryGrid(onCategory: (LibraryCategory) -> Unit, onShuffle: () -> Unit, onCrates: (() -> Unit)? = null) {
     val cards: List<Pair<CategoryLook, () -> Unit>> =
-        LibraryCategory.entries.map { c -> lookOf(c) to { onCategory(c) } } + (ShuffleLook to onShuffle)
+        LibraryCategory.entries.map { c -> lookOf(c) to { onCategory(c) } } + (ShuffleLook to onShuffle) +
+            listOfNotNull(onCrates?.let { CratesLook to it })
     Column(
         Modifier.padding(horizontal = PageGutter),
         verticalArrangement = Arrangement.spacedBy(14.dp),

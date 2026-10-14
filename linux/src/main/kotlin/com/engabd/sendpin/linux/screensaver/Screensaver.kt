@@ -696,7 +696,7 @@ internal fun detailsLine(year: Int?, genres: List<String>): String =
         .joinToString("  ·  ") { it.uppercase() }
 
 /** How a [Face] is set: the font, and the spacing that face wants at display size. */
-private data class FaceSpec(
+internal data class FaceSpec(
     val family: FontFamily,
     val weight: FontWeight = FontWeight.Normal,
     val style: FontStyle = FontStyle.Normal,
@@ -707,7 +707,7 @@ private data class FaceSpec(
     val scale: Float = 1f,
 )
 
-private fun specOf(face: Face): FaceSpec = when (face) {
+internal fun specOf(face: Face): FaceSpec = when (face) {
     Face.CLASSICAL -> FaceSpec(DisplayFonts.CormorantGaramond, tracking = 0.01f, lineHeight = 1.0f, scale = 1.15f)
     Face.JAZZ -> FaceSpec(DisplayFonts.PoiretOne, tracking = 0.04f, lineHeight = 1.1f)
     Face.SOUL -> FaceSpec(DisplayFonts.DMSerifDisplay, tracking = -0.01f)
