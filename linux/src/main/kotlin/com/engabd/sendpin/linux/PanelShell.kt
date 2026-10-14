@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.engabd.sendpin.linux.station.LocalBigReadouts
+import com.engabd.sendpin.linux.station.StatusBanner
 import com.engabd.sendpin.linux.ui.LocalNowArt
 import com.engabd.sendpin.linux.ui.PaneAmbience
 import com.engabd.sendpin.linux.ui.rememberLivingArt
@@ -94,15 +96,20 @@ fun PanelShell(model: PanelModel, layoutMode: LayoutMode) {
     // its loaded shelves while the Queue or Lights tab is showing.
     val libraryState = remember { LibraryState() }
 
-    Box(Modifier.fillMaxSize().background(Ink)) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            when (layoutMode) {
-                LayoutMode.LANDSCAPE -> LandscapeShell(model, tab, { t -> tab = t }, libraryState)
-                // Portrait is the overlay shell: the now-playing cover IS the screen,
-                // swiped down to reveal tabs + mini bar + bottom nav (PortraitShell
-                // owns its tab state — the shared `tab` above is the landscape strip's).
-                LayoutMode.PORTRAIT -> PortraitShell(model, libraryState = libraryState)
+    val bigReadouts by model.settings.bigReadouts.collectAsState(initial = false)
+    CompositionLocalProvider(LocalBigReadouts provides bigReadouts) {
+        Box(Modifier.fillMaxSize().background(Ink)) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                when (layoutMode) {
+                    LayoutMode.LANDSCAPE -> LandscapeShell(model, tab, { t -> tab = t }, libraryState)
+                    // Portrait is the overlay shell: the now-playing cover IS the screen,
+                    // swiped down to reveal tabs + mini bar + bottom nav (PortraitShell
+                    // owns its tab state — the shared `tab` above is the landscape strip's).
+                    LayoutMode.PORTRAIT -> PortraitShell(model, libraryState = libraryState)
+                }
             }
+            // Over everything in the shell, and only there while something cannot be reached.
+            StatusBanner(model, Modifier.align(Alignment.TopCenter))
         }
     }
 }

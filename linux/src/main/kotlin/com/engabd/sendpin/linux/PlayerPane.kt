@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +39,13 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import com.engabd.sendpin.linux.ui.AlbumArtStage
 import com.engabd.sendpin.linux.ui.ArtTransition
+import com.engabd.sendpin.linux.station.FlippableCover
+import com.engabd.sendpin.linux.station.LocalBigReadouts
+import com.engabd.sendpin.linux.station.SignalPath
+import com.engabd.sendpin.linux.station.SleepChip
+import com.engabd.sendpin.linux.station.SleeveBack
+import com.engabd.sendpin.linux.station.VolumeRail
+import com.engabd.sendpin.linux.station.swipeToSkip
 import com.engabd.sendpin.linux.ui.LocalNowArt
 import com.engabd.sendpin.ui.design.glassSurface
 import com.engabd.sendpin.ui.theme.AppFont
@@ -51,6 +60,7 @@ import com.engabd.sendpin.ui.theme.TextSecondary
  * the shared theme tokens (the originals in NowPlayingParts.kt are bound to
  * AppSettings(context) and NowPlayingViewModel, which the desktop does not have).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PlayerPane(modifier: Modifier, model: PanelModel) {
     val state by model.state.collectAsState()
@@ -62,6 +72,12 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
     val posMs = state?.positionMs ?: 0L
     val durMs = state?.durationMs ?: track?.durationMs ?: 0L
     val playing = state?.playing ?: false
+    val settings = model.settings
+    val touch by settings.touchGestures.collectAsState(initial = false)
+    val sleeve by settings.sleeveFlip.collectAsState(initial = false)
+    val signalPanel by settings.signalPanel.collectAsState(initial = false)
+    val sleepChip by settings.sleepTimer.collectAsState(initial = false)
+    val big = LocalBigReadouts.current
 
     Box(modifier) {
         // No wash of its own: PanelShell draws one ambience behind both panes, so
@@ -90,15 +106,29 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
                 // over on a new one. Square-cropped,
                 // inside the glass card (no glow of its own — the card is its frame).
                 val transition by model.settings.albumTransition.collectAsState(initial = ArtTransition.FLIP)
-                AlbumArtStage(
-                    art = nowArt,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-                    transition = transition,
-                    glow = com.engabd.sendpin.ui.design.rememberAccent(),
-                    shape = RoundedCornerShape(28.dp),
-                    glowElevation = 0.dp,
-                    contentDescription = track?.album ?: track?.title,
-                )
+                // Swipe to skip, hold to turn the sleeve over, the volume along the edge —
+                // each only with its switch on; with them all off this is the cover alone.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .swipeToSkip(touch, { scope.launch { model.next() } }, { scope.launch { model.previous() } }),
+                ) {
+                    FlippableCover(sleeve, Modifier.fillMaxSize(), back = { SleeveBack(model) }) {
+                        AlbumArtStage(
+                            art = nowArt,
+                            modifier = Modifier.fillMaxSize(),
+                            transition = transition,
+                            glow = com.engabd.sendpin.ui.design.rememberAccent(),
+                            shape = RoundedCornerShape(28.dp),
+                            glowElevation = 0.dp,
+                            contentDescription = track?.album ?: track?.title,
+                        )
+                    }
+                    if (touch) {
+                        VolumeRail(state?.volume, { v -> scope.launch { model.setVolume(v) } }, Modifier.align(Alignment.CenterEnd))
+                    }
+                }
             } else {
                 Text(
                     "♪",
@@ -129,9 +159,14 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             overflow = TextOverflow.Ellipsis,
         )
         // What MPD is decoding, and how it is levelling it — the cover's pair.
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
             com.engabd.sendpin.ui.design.MpdQualityBadge(track = track, outputFormat = state?.outputFormat)
             LoudnessChip(model)
+            if (sleepChip) SleepChip(model)
         }
 
         // Seek — the cover's wavy bar in the album's accent; scrub commits on release
@@ -143,8 +178,8 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             onCommit = { f -> scope.launch { model.seekTo((f * durMs).toLong()) } },
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatMs(posMs), color = TextMuted, fontSize = PanelMetrics.Meta, fontFamily = AppFont)
-            Text(formatMs(durMs), color = TextMuted, fontSize = PanelMetrics.Meta, fontFamily = AppFont)
+            Text(formatMs(posMs), color = TextMuted, fontSize = if (big) 24.sp else PanelMetrics.Meta, fontFamily = AppFont)
+            Text(formatMs(durMs), color = TextMuted, fontSize = if (big) 24.sp else PanelMetrics.Meta, fontFamily = AppFont)
         }
 
         // Transport row
@@ -166,7 +201,9 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
 
         // The live format readout — MPD is the decoder; show what it is decoding.
         val out = state?.outputFormat
-        if (out != null && state?.playing == true) {
+        if (signalPanel) {
+            SignalPath(model, Modifier.fillMaxWidth())
+        } else if (out != null && state?.playing == true) {
             Text(
                 "MPD → ${state?.outputDeviceName ?: ""} · ${fmtRate(out.sampleRateHz)}/${out.bitDepth}",
                 color = TextMuted,

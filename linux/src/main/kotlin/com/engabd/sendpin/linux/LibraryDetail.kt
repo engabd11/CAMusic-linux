@@ -1,7 +1,9 @@
 package com.engabd.sendpin.linux
 
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.engabd.sendpin.library.Capability
 import com.engabd.sendpin.library.MusicSource
+import com.engabd.sendpin.linux.station.LocalTrackMenu
 import com.engabd.sendpin.linux.ui.ArtImage
 import com.engabd.sendpin.linux.ui.CircleButton
 import com.engabd.sendpin.linux.ui.EmptyState
@@ -509,6 +512,7 @@ internal fun ArtistScreen(
  * lit — an accent wash behind the row, the title in the accent, and the dancing bars
  * in place of its number.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TrackRow(
     track: MaItem,
@@ -520,6 +524,7 @@ internal fun TrackRow(
 ) {
     val accent = rememberAccent()
     val isNow = now.id != null && now.id == track.itemId
+    val menu = LocalTrackMenu.current
     Row(
         Modifier
             .fillMaxWidth()
@@ -527,7 +532,11 @@ internal fun TrackRow(
             .heightIn(min = 72.dp)
             .clip(PanelShapes.Thumb)
             .background(if (isNow) accent.a(0.14f) else Color.Transparent)
-            .clickable(onClick = onClick)
+            // Held, a song offers its menu (Settings → Row menus); otherwise a plain tap target.
+            .then(
+                if (menu != null) Modifier.combinedClickable(onClick = onClick, onLongClick = { menu(track) })
+                else Modifier.clickable(onClick = onClick),
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),

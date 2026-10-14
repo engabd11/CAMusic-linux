@@ -537,7 +537,13 @@ class PanelModel(val settings: LinuxSettings) {
                 wake.trySend(Unit)
             }
             SleepAction.ARM_STOP_AFTER_CURRENT -> {
-                if (guarded("Sleep") { remote?.stopAfterCurrent(true) }) sleep.value = t.copy(armed = true)
+                if (guarded("Sleep") { remote?.stopAfterCurrent(true) }) {
+                    sleep.value = t.copy(armed = true)
+                } else {
+                    // An MPD too old for `single oneshot`: pause as the last track runs out instead.
+                    val left = ((s?.durationMs ?: 0L) - (s?.positionMs ?: 0L)).coerceAtLeast(0L)
+                    sleep.value = t.copy(deadlineMs = System.currentTimeMillis() + left + 300L, sideEnd = null)
+                }
             }
             SleepAction.CLEAR -> sleep.value = null
         }

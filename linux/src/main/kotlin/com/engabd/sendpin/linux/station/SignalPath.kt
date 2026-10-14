@@ -1,6 +1,15 @@
 package com.engabd.sendpin.linux.station
 
 import androidx.compose.animation.animateColorAsState
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.clickable
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -151,6 +160,51 @@ private fun Lamp(chain: Chain, accent: Color, ink: Color) {
                 fontSize = 12.sp,
                 letterSpacing = 0.14.em,
                 maxLines = 1,
+            )
+        }
+    }
+}
+
+/** How long the sheet stays up with nobody touching it. */
+private const val SHEET_MS = 20_000L
+
+/**
+ * The signal path as a sheet over the foot of the now-playing cover — where there is no room
+ * to leave it in the layout. Opened by the quality badge; a tap, or a while, closes it.
+ */
+@Composable
+internal fun BoxScope.SignalSheet(model: PanelModel, visible: Boolean, onDismiss: () -> Unit) {
+    LaunchedEffect(visible) {
+        if (visible) {
+            delay(SHEET_MS)
+            onDismiss()
+        }
+    }
+    AnimatedVisibility(
+        visible = visible,
+        modifier = Modifier.align(Alignment.BottomCenter),
+        enter = slideInVertically(tween(280)) { it } + fadeIn(tween(280)),
+        exit = slideOutVertically(tween(220)) { it } + fadeOut(tween(220)),
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(Color(0xF2121216))
+                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(26.dp))
+                .clickable(onClick = onDismiss)
+                .padding(horizontal = 22.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                "SIGNAL PATH", color = Color.White.copy(alpha = 0.55f), fontFamily = AppFont,
+                fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 0.3.em,
+            )
+            SignalPath(model)
+            Text(
+                "Read from MPD and the library. It cannot see inside a DAC driver or an ALSA plugin.",
+                color = Color.White.copy(alpha = 0.38f), fontFamily = AppFont, fontSize = 13.sp,
             )
         }
     }

@@ -21,6 +21,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
+import com.engabd.sendpin.linux.station.FlippableCover
+import com.engabd.sendpin.linux.station.LocalBigReadouts
+import com.engabd.sendpin.linux.station.SignalSheet
+import com.engabd.sendpin.linux.station.SleepChip
+import com.engabd.sendpin.linux.station.SleeveBack
+import com.engabd.sendpin.linux.station.VolumeRail
+import com.engabd.sendpin.linux.station.swipeToSkip
 import com.engabd.sendpin.linux.ui.AlbumArtStage
 import com.engabd.sendpin.linux.ui.AlbumBleed
 import com.engabd.sendpin.linux.ui.ArtTransition
@@ -310,6 +317,13 @@ private fun NowPlayingCover(
     val restsOnPause by model.settings.coverRestsOnPause.collectAsState(initial = true)
     val textMotion by model.settings.trackTextMotion.collectAsState(initial = true)
     val obscured by model.coverObscured.collectAsState()
+    // The station's additions — each a switch in Settings, off until switched on.
+    val touch by model.settings.touchGestures.collectAsState(initial = false)
+    val sleeve by model.settings.sleeveFlip.collectAsState(initial = false)
+    val signalPanel by model.settings.signalPanel.collectAsState(initial = false)
+    val sleepChip by model.settings.sleepTimer.collectAsState(initial = false)
+    val big = LocalBigReadouts.current
+    var signalOpen by remember { mutableStateOf(false) }
     // Paused, the record settles back a little and dims; playing, it springs forward.
     val rest = remember { Animatable(0f) }
     LaunchedEffect(playing, restsOnPause, track != null) {
@@ -419,15 +433,29 @@ private fun NowPlayingCover(
             // the cover still through a whole album and turns it over on a new one; the
             // living colours move the room around it, never the picture.
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                AlbumArtStage(
-                    art = nowArt,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-                    transition = transition,
-                    glow = accent,
-                    shape = RoundedCornerShape(28.dp),
-                    rest = { rest.value },
-                    contentDescription = track?.album ?: track?.title,
-                )
+                // Swipe to skip, hold to turn the sleeve over, the volume along the edge —
+                // each only with its switch on; with them all off this is the cover alone.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .swipeToSkip(touch, { scope.launch { model.next() } }, { scope.launch { model.previous() } }),
+                ) {
+                    FlippableCover(sleeve, Modifier.fillMaxSize(), back = { SleeveBack(model) }) {
+                        AlbumArtStage(
+                            art = nowArt,
+                            modifier = Modifier.fillMaxSize(),
+                            transition = transition,
+                            glow = accent,
+                            shape = RoundedCornerShape(28.dp),
+                            rest = { rest.value },
+                            contentDescription = track?.album ?: track?.title,
+                        )
+                    }
+                    if (touch) {
+                        VolumeRail(state?.volume, { v -> scope.launch { model.setVolume(v) } }, Modifier.align(Alignment.CenterEnd))
+                    }
+                }
             }
 
             // Half the letterbox gap the old weighted band left: the art → badge space is
@@ -441,8 +469,14 @@ private fun NowPlayingCover(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MpdQualityBadge(track = track, outputFormat = state?.outputFormat)
+                // With the signal panel on, the badge opens the chain behind it.
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(11.dp))
+                        .then(if (signalPanel) Modifier.clickable { signalOpen = true } else Modifier),
+                ) { MpdQualityBadge(track = track, outputFormat = state?.outputFormat) }
                 LoudnessChip(model)
+                if (sleepChip) SleepChip(model)
             }
 
             // Title block — centred, the overlay's own arrangement. Title and artist
@@ -467,8 +501,8 @@ private fun NowPlayingCover(
                 onCommit = { f -> scope.launch { model.seekTo((f * durMs).toLong()) } },
             )
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatMs(posMs), color = TextMuted, fontSize = 14.sp, fontFamily = MonoFont)
-                Text("−" + formatMs((durMs - posMs).coerceAtLeast(0)), color = TextMuted, fontSize = 14.sp, fontFamily = MonoFont)
+                Text(formatMs(posMs), color = TextMuted, fontSize = if (big) 26.sp else 14.sp, fontFamily = MonoFont)
+                Text("−" + formatMs((durMs - posMs).coerceAtLeast(0)), color = TextMuted, fontSize = if (big) 26.sp else 14.sp, fontFamily = MonoFont)
             }
             // Transport — the accent carries the play circle, as on the phone. Skips are
             // pushed well out from the play circle so a hurried thumb cannot hit
@@ -499,6 +533,7 @@ private fun NowPlayingCover(
             // from over-flowing the screen on a small cover band.
             Spacer(Modifier.fillMaxWidth().weight(1f))
         }
+        if (signalPanel) SignalSheet(model, signalOpen) { signalOpen = false }
     }
 }
 

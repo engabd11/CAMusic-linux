@@ -9,7 +9,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import com.engabd.sendpin.audio.LocalTrack
 import com.engabd.sendpin.audio.RemoteAudioFormat
@@ -293,6 +295,57 @@ private fun renderAll(args: Array<String>) {
         m.listeningNow.value = true
         ListeningHost(m, remember { IdleGate() })
     }
+
+    // The touch layer and the screens around it.
+    val queueTab: @Composable (PanelModel) -> Unit = { m ->
+        PortraitShell(m, initialTab = PanelTab.QUEUE, initiallyExpanded = false, libraryState = remember { LibraryState() })
+    }
+    looked("51-station-queue-gestures", 800, 1280, frames = 120, setup = {
+        setLivingArt("off"); setTouchGestures(true); setRowMenus(true)
+    }, content = queueTab)
+    looked("52-station-row-menu", 800, 1280, frames = 120, setup = {
+        setLivingArt("off"); setRowMenus(true)
+    }) { m ->
+        val menus = remember {
+            com.engabd.sendpin.linux.station.ActionMenuState().also { st ->
+                st.show(
+                    "Held Breath", "Aurora Vale",
+                    com.engabd.sendpin.linux.queueRowActions(
+                        playing = false, isNext = false, isLast = false, onPlay = {}, onPlayNext = {}, onToEnd = {}, onRemove = {},
+                    ),
+                )
+            }
+        }
+        CompositionLocalProvider(com.engabd.sendpin.linux.station.LocalActionMenu provides menus) {
+            Box(Modifier.fillMaxSize()) {
+                queueTab(m)
+                com.engabd.sendpin.linux.station.ActionMenuHost(menus)
+            }
+        }
+    }
+    looked("53-station-crates", 800, 1280, frames = 140, setup = { setLivingArt("off"); setCrateMode(true) }) { m ->
+        PortraitShell(
+            m, initialTab = PanelTab.LIBRARY, initiallyExpanded = false,
+            libraryState = remember { LibraryState().also { it.bind(lib); it.stack = listOf(LibraryRoute.Home, LibraryRoute.Crates) } },
+        )
+    }
+    looked("54-station-sleeve", 800, 800, frames = 100, setup = { setLivingArt("off") }) { m ->
+        Box(Modifier.fillMaxSize().padding(40.dp)) { com.engabd.sendpin.linux.station.SleeveBack(m) }
+    }
+    looked("55-station-banner", 800, 1280, frames = 120, setup = {
+        setLivingArt("off"); setStatusBanner(true); setSleepTimer(true); setSignalPanel(true); setBigReadouts(true)
+    }) { m ->
+        m.mpdUp.value = false
+        m.setSleep(com.engabd.sendpin.linux.station.SleepChoice.M30)
+        PanelShell(m, LayoutMode.PORTRAIT)
+    }
+    looked("56-station-deep-idle", 800, 1280, frames = 160, setup = { setDeepIdle("clock"); setDeepIdleMin(15) }) { m ->
+        var t = 0L
+        val gate = remember { IdleGate { t } }
+        t = 3 * 60 * 60_000L
+        com.engabd.sendpin.linux.station.DeepIdleHost(m, gate)
+    }
+    portrait("57-station-settings-full", PanelTab.SETTINGS, height = 5600)
 
     // The postcard is a card, not a screen: render it straight from a cover off the preview server.
     if (System.getenv("PREVIEW_ONLY").let { it.isNullOrBlank() || it.split(',').any { k -> "50-station-postcard".contains(k.trim()) || k.trim() == "station" } }) {

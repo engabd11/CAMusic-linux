@@ -13,6 +13,10 @@ import com.engabd.sendpin.linux.ui.LocalLiquidStyle
 import com.engabd.sendpin.linux.ui.PanelFinish
 import com.engabd.sendpin.linux.screensaver.ListeningHost
 import com.engabd.sendpin.linux.screensaver.ScreensaverHost
+import com.engabd.sendpin.linux.station.ActionMenuHost
+import com.engabd.sendpin.linux.station.ActionMenuState
+import com.engabd.sendpin.linux.station.DeepIdleHost
+import com.engabd.sendpin.linux.station.LocalActionMenu
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -81,6 +85,8 @@ fun main() = application {
 
     // The screensaver's idle clock, fed by every touch and key below.
     val idle = remember { IdleGate() }
+    // The one menu a held row opens, drawn for every pane.
+    val menus = remember { ActionMenuState() }
 
     val (panelWidth, panelHeight) = remember { panelSize() }
     Window(
@@ -110,6 +116,7 @@ fun main() = application {
             CompositionLocalProvider(
                 LocalColourMood provides ColourMood.from(mood),
                 LocalLiquidStyle provides LiquidStyle.from(liquid),
+                LocalActionMenu provides menus,
             ) {
                 Box(
                     Modifier
@@ -129,10 +136,14 @@ fun main() = application {
                         },
                 ) {
                     PanelShell(model = model, layoutMode = LayoutMode.from(layout))
+                    // A held row's menu, above the shell and below the always-on views.
+                    ActionMenuHost(menus)
                     // While music plays and nobody touches: the record takes the screen.
                     ListeningHost(model, idle)
                     // While nothing plays: the album gallery.
                     ScreensaverHost(model, idle)
+                    // After a long while untouched: a dim clock, or the screen off.
+                    DeepIdleHost(model, idle)
                     // In front of it all, taking no touches: vignette, grain and the night.
                     PanelFinish(settings)
                 }

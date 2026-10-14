@@ -21,6 +21,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -71,6 +76,28 @@ internal class ActionMenuState {
     }
 
     fun hide() { request = null }
+}
+
+/**
+ * What a held track row in the library does, or null when row menus are off or no host draws
+ * them. Provided by the library pane; [com.engabd.sendpin.linux.TrackRow] reads it, so every
+ * list of songs — an album, search results, a playlist — offers the same menu.
+ */
+internal val LocalTrackMenu = staticCompositionLocalOf<((com.engabd.sendpin.ma.MaItem) -> Unit)?> { null }
+
+/** What a held library song offers: queue it next or last, and the way to its album and artist. */
+internal fun libraryTrackActions(
+    hasAlbum: Boolean,
+    hasArtist: Boolean,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onAlbum: () -> Unit,
+    onArtist: () -> Unit,
+): List<MenuAction> = buildList {
+    add(MenuAction("Play next", Icons.Default.SkipNext, run = onPlayNext))
+    add(MenuAction("Add to queue", Icons.AutoMirrored.Filled.PlaylistAdd, run = onAddToQueue))
+    if (hasAlbum) add(MenuAction("Go to album", Icons.Default.Album, run = onAlbum))
+    if (hasArtist) add(MenuAction("Go to artist", Icons.Default.Person, run = onArtist))
 }
 
 /** Null where no host is drawing menus (the previews, a pane on its own): rows then do nothing on hold. */

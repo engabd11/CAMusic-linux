@@ -49,7 +49,7 @@ internal data class Banner(val title: String, val detail: String)
  */
 internal fun bannerMessage(mpdUp: Boolean, mpdAddress: String, jellyfinProblem: String?): Banner? = when {
     !mpdUp && jellyfinProblem != null -> Banner("Can't reach MPD or Jellyfin", "Check the network and that both are running.")
-    !mpdUp -> Banner("Can't reach MPD", mpdAddress.ifBlank { "No address set" } + " is not answering — nothing can play until it does.")
+    !mpdUp -> Banner("Can't reach MPD", mpdAddress.ifBlank { "MPD" } + " is not answering — nothing can play until it does.")
     jellyfinProblem != null -> Banner("Can't reach Jellyfin", "The library is unavailable; what is playing carries on.  " + jellyfinProblem.take(80))
     else -> null
 }
