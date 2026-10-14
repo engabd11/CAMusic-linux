@@ -267,11 +267,16 @@ private fun ListeningView(
                     .offset { driftOffset() },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.weight(if (clock) 1.15f else 0.8f))
+                // The words sit in a slot of their own, top-aligned, so a longer title grows
+                // down into the slot's spare room and never moves the record. (Weighted
+                // spacers on both sides of the words let the record rise as they grew.) The
+                // weights put the record where a one-line title used to leave it.
+                Spacer(Modifier.weight(if (clock) 0.53f else 0.4f))
                 record(Modifier.fillMaxWidth(if (layout == ListeningLayout.VINYL) 0.98f else 0.92f))
                 Spacer(Modifier.height(52.dp))
-                TrackWords(model, track, TextAlign.Center, titleMaxSp = 54f)
-                Spacer(Modifier.weight(1f))
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    TrackWords(model, track, TextAlign.Center, titleMaxSp = 54f)
+                }
             }
         }
     }
