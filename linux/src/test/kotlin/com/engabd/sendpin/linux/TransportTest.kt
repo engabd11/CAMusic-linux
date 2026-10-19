@@ -77,4 +77,31 @@ class TransportTest {
         )
         assertEquals("Play: MPD didn't answer", commandErrorLine("Play", "  ", ""))
     }
+
+    @Test
+    fun `a reading is fresh only when no transport command landed mid-read`() {
+        assertTrue(pollReadingFresh(epochBefore = 3, epochNow = 3))
+        assertFalse(pollReadingFresh(epochBefore = 3, epochNow = 4))
+    }
+
+    @Test
+    fun `a fresh reading is published, a stale one is not`() {
+        val playing = state(playing = true, index = 2)
+        val paused = state(playing = false, index = 2)
+        // Fresh: the reading itself stands (the pause the command just made).
+        assertEquals(paused, pollPublishes(previous = playing, reading = paused, fresh = true))
+        // Stale: the reading predates the command's optimistic write — keep the
+        // previous state rather than flip the button back under the thumb.
+        assertEquals(paused, pollPublishes(previous = paused, reading = playing, fresh = false))
+    }
+
+    @Test
+    fun `a dropped status keeps the last good state instead of blanking the screen`() {
+        val playing = state(playing = true, index = 2)
+        // MPD didn't answer this poll: null must not read as "stopped" — the UI
+        // holds the last reading until the next answer (RemotePlayback.poll's contract).
+        assertEquals(playing, pollPublishes(previous = playing, reading = null, fresh = true))
+        // And with nothing held yet, it stays nothing.
+        assertEquals(null, pollPublishes(previous = null, reading = null, fresh = true))
+    }
 }
