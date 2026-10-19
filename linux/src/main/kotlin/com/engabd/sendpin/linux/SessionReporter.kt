@@ -60,6 +60,8 @@ class SessionReporter(
     private val samples = ArrayDeque<Long>()
     /** Consecutive samples well below the intercept — see [LAG_RESET_MS]. */
     private var lagging = 0
+    /** Readings folded in since the last [anchor]. */
+    private var sinceAnchor = 0
     private var lastReadAtMs: Long = 0
     private var lastProgressAtMs: Long = 0
 
@@ -159,6 +161,7 @@ class SessionReporter(
         pausedPositionMs = state.positionMs
         samples.clear()
         lagging = 0
+        sinceAnchor = 0
         samples.addLast(state.positionMs - readAtMs)
         lastReadAtMs = readAtMs
     }
@@ -168,7 +171,11 @@ class SessionReporter(
         // was too high — the audio started a moment after MPD first reported it
         // playing (the output opening after a start or resume). Rebuild from the
         // lagging samples rather than hold the early one for the whole window.
-        if (intercept() - sample > LAG_RESET_MS) {
+        // Only just after an anchor: that is when an output opens late. Later on,
+        // samples sit anywhere up to one MPD step (0.25 s) under the max by design
+        // (see POLL_PERIOD_MS), and three of them in a row are normal.
+        sinceAnchor++
+        if (sinceAnchor <= LAG_RESET_READINGS && intercept() - sample > LAG_RESET_MS) {
             if (++lagging >= LAG_RESET_COUNT) {
                 val lagged = samples.takeLast(LAG_RESET_COUNT - 1)
                 samples.clear()
@@ -196,8 +203,13 @@ class SessionReporter(
          */
         private const val SEEK_TOLERANCE_MS = 500L
 
-        /** Samples in the intercept window — about eight seconds at 1 Hz. */
-        private const val WINDOW = 8
+        /**
+         * Samples in the intercept window — about sixteen seconds at 1 Hz. The poll's
+         * phase walks 37 ms along MPD's step per reading ([POLL_PERIOD_MS]), so this
+         * covers a step of up to ~0.6 s, and the max is a reading taken just as
+         * `elapsed` moved: the audio's own position.
+         */
+        private const val WINDOW = 16
 
         /**
          * How far under the intercept a sample must sit to count as lagging, and how
@@ -206,6 +218,8 @@ class SessionReporter(
          */
         private const val LAG_RESET_MS = 120L
         private const val LAG_RESET_COUNT = 3
+        /** ... and only within this many readings of a start, resume or seek. */
+        private const val LAG_RESET_READINGS = 6
 
         private const val TICK_SLACK_MS = 250L
     }
