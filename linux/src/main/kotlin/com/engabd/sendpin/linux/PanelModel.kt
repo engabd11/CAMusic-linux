@@ -231,10 +231,20 @@ class PanelModel(val settings: LinuxSettings) {
             while (isActive) {
                 val pollAt = System.currentTimeMillis()
                 queueLock.withLock {
+                    val epochBefore = commandEpoch.get()
                     val s = remote?.poll()
                     // Taken straight after the answer: the reporter extrapolates from it.
                     val readAt = System.currentTimeMillis()
-                    state.value = s
+                    // A transport command that landed while this reading was in flight
+                    // makes the reading older than the command's own optimistic state —
+                    // publishing it would flip the button back under the thumb (and
+                    // hand HueGhost a stale "playing" after a pause). The wake the
+                    // command sent brings a fresh reading within milliseconds, so the
+                    // stale one is skipped. A dropped status (s == null) keeps the last
+                    // good reading instead of blanking the screen — the contract
+                    // RemotePlayback.poll documents.
+                    val fresh = pollReadingFresh(epochBefore, commandEpoch.get())
+                    state.value = pollPublishes(state.value, s, fresh)
                     if (s != null) {
                         mpdMisses = 0
                         mpdUp.value = true
@@ -250,6 +260,7 @@ class PanelModel(val settings: LinuxSettings) {
                     }
                     reconcileQueueFromMpd()
                     val reading = when {
+                        !fresh -> null // stale: the command's wake brings a fresh reading
                         s == null || s.stopped -> Reading(s, null, readAt)
                         else -> when (val who = identify(queue.value, s.index, playingFile)) {
                             is Identity.Known -> Reading(s, who.jellyfinId, readAt)
@@ -364,26 +375,51 @@ class PanelModel(val settings: LinuxSettings) {
         }
     }
 
-    /** Next track — nothing to do (rather than an error from MPD) when there is no next. */
+    /**
+     * Next track — nothing to do (rather than an error from MPD) when there is no next.
+     *
+     * Decided from MPD's own answer, read now, not from the last poll — a reading up
+     * to a second old (or none at all, after one dropped `status`) made a tap on Next
+     * do nothing: [canSkipNext] refused on the stale state and the tap was silently
+     * dropped, which is the "have to click it twice" skip. The poll the command wakes
+     * confirms the move.
+     */
     suspend fun next() = transportLock.withLock {
-        if (canSkipNext(state.value, queue.value.size)) send("Next") { next() }
+        val s = remote?.poll() ?: state.value
+        if (canSkipNext(s, queue.value.size)) send("Next") { next() }
     }
 
     /** Previous track (or the start of this one, as MPD does) — only while something is loaded. */
     suspend fun previous() = transportLock.withLock {
-        if (canSkipPrevious(state.value)) send("Previous") { previous() }
+        val s = remote?.poll() ?: state.value
+        if (canSkipPrevious(s)) send("Previous") { previous() }
     }
 
     suspend fun seekTo(ms: Long) = transportLock.withLock {
-        if (state.value?.stopped == false) send("Seek") { seekTo(ms) }
+        val s = remote?.poll() ?: state.value
+        if (s?.stopped == false) send("Seek") { seekTo(ms) }
     }
 
     /** One transport command at a time — see the note above [playAt]. */
     private val transportLock = Mutex()
 
+    /**
+     * Bumped by [send] the moment a transport command is issued. The poll captures it
+     * before its read and compares after: a command that landed mid-read makes the
+     * reading older than the command's own optimistic state, so the poll skips
+     * publishing it — the wake the command sent brings a fresh reading at once. See
+     * [pollReadingFresh].
+     */
+    private val commandEpoch = java.util.concurrent.atomic.AtomicLong()
+
     /** Sends [command] through [guarded] and wakes the poll; true when MPD took it. */
     private suspend fun send(what: String, command: suspend MpdRemote.() -> Unit): Boolean {
         val r = remote ?: return false
+        // The moment a command is issued, any poll reading in flight is suspect: it may
+        // predate the command, and publishing it would clobber the command's optimistic
+        // state. The poll compares this epoch before and after its read and skips a
+        // reading a command landed in the middle of.
+        commandEpoch.incrementAndGet()
         val ok = guarded(what) { r.command() }
         wake.trySend(Unit)
         return ok
@@ -676,6 +712,24 @@ internal fun commandErrorLine(what: String, message: String?, connection: String
     val line = "$what: $reason"
     return if (connection.isBlank()) line else "$connection  ·  $line"
 }
+
+/**
+ * Whether a poll reading taken at command epoch [epochBefore] is still current now that
+ * the epoch reads [epochNow]: only when no transport command landed while the reading
+ * was in flight. A command that did land makes the reading older than the command's own
+ * optimistic state, so the poll must not publish it — see [PanelModel.send]. Pure for
+ * the tests.
+ */
+internal fun pollReadingFresh(epochBefore: Long, epochNow: Long): Boolean = epochBefore == epochNow
+
+/**
+ * The state the poll publishes from one reading: the reading itself when it is fresh and
+ * present, otherwise the previous state — a dropped `status` must not blank the screen
+ * (the contract [com.engabd.sendpin.audio.RemotePlayback.poll] documents), and a stale
+ * reading must not clobber the command's optimistic write. Pure for the tests.
+ */
+internal fun pollPublishes(previous: RemoteState?, reading: RemoteState?, fresh: Boolean): RemoteState? =
+    if (fresh && reading != null) reading else previous
 
 /**
  * The pure half of [PanelModel.reconcileQueueFromMpd]: given the panel's own queue and
