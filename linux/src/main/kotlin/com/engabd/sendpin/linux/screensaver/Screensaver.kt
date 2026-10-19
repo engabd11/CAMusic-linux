@@ -120,6 +120,7 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
     val settings = model.settings
     val enabled by settings.screensaverEnabled.collectAsState(initial = true)
     val delayMin by settings.screensaverDelayMin.collectAsState(initial = 10)
+    val delayS by settings.screensaverDelayS.collectAsState(initial = 0)
     val style by settings.screensaverStyle.collectAsState(initial = "gallery")
     val slideS by settings.screensaverSlideS.collectAsState(initial = 20)
     val albums by settings.screensaverAlbums.collectAsState(initial = "all")
@@ -148,8 +149,8 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
     LaunchedEffect(forced) { if (forced) showing = true }
     // The player underneath stops animating what nobody can see (LivingArt, the blooms).
     LaunchedEffect(showing) { model.coverObscured.value = showing }
-    LaunchedEffect(enabled, delayMin, playing) {
-        val delayMs = delayMin * 60_000L
+    LaunchedEffect(enabled, delayMin, delayS, playing) {
+        val delayMs = IdleGate.delayMs(delayMin, delayS)
         while (true) {
             val idle = gate.idleMs()
             if (IdleGate.shouldShow(enabled, playing, idle, delayMs)) showing = true

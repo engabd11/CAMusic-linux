@@ -166,6 +166,8 @@ class LinuxSettings(private val path: Path) {
     val screensaverEnabled: Flow<Boolean> = bool("screensaver_enabled", true)
     /** Minutes untouched, with nothing playing, before the gallery begins. */
     val screensaverDelayMin: Flow<Int> = int("screensaver_delay_min", 10)
+    /** Typed seconds that replace [screensaverDelayMin] while above 0 (Settings → Custom). */
+    val screensaverDelayS: Flow<Int> = int("screensaver_delay_s", 0)
     /**
      * `gallery` (the cover as a lit print on its blurred wash) | `bloom` (the same print on
      * the album's colours bleeding across the screen) | `kenburns` (full-bleed, slow pan and zoom).
@@ -187,6 +189,7 @@ class LinuxSettings(private val path: Path) {
 
     suspend fun setScreensaverEnabled(value: Boolean) = set("screensaver_enabled", JsonPrimitive(value))
     suspend fun setScreensaverDelayMin(value: Int) = set("screensaver_delay_min", JsonPrimitive(value))
+    suspend fun setScreensaverDelayS(value: Int) = set("screensaver_delay_s", JsonPrimitive(value))
     suspend fun setScreensaverStyle(value: String) = set("screensaver_style", JsonPrimitive(value))
     suspend fun setScreensaverSlideS(value: Int) = set("screensaver_slide_s", JsonPrimitive(value))
     suspend fun setScreensaverAlbums(value: String) = set("screensaver_albums", JsonPrimitive(value))
@@ -263,6 +266,8 @@ class LinuxSettings(private val path: Path) {
     val listeningMode: Flow<Boolean> = bool("listening_mode", true)
     /** Minutes untouched, while playing, before the listening view takes the screen. */
     val listeningDelayMin: Flow<Int> = int("listening_delay_min", 3)
+    /** Typed seconds that replace [listeningDelayMin] while above 0 (Settings → Custom). */
+    val listeningDelayS: Flow<Int> = int("listening_delay_s", 0)
     val listeningClock: Flow<Boolean> = bool("listening_clock", true)
     /** `classic` | `vinyl` | `poster` | `cover` — how the record is laid out. */
     val listeningLayout: Flow<String> = str("listening_layout", "classic")
@@ -270,6 +275,7 @@ class LinuxSettings(private val path: Path) {
 
     suspend fun setListeningMode(value: Boolean) = set("listening_mode", JsonPrimitive(value))
     suspend fun setListeningDelayMin(value: Int) = set("listening_delay_min", JsonPrimitive(value))
+    suspend fun setListeningDelayS(value: Int) = set("listening_delay_s", JsonPrimitive(value))
     suspend fun setListeningClock(value: Boolean) = set("listening_clock", JsonPrimitive(value))
 
     // ── The hi-fi station (v1.2) ──────────────────────────────────────────

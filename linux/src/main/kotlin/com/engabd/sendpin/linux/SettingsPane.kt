@@ -64,6 +64,7 @@ import com.engabd.sendpin.linux.ui.PageHeader
 import com.engabd.sendpin.linux.ui.PillButton
 import com.engabd.sendpin.linux.ui.SegmentedControl
 import com.engabd.sendpin.linux.ui.LiquidStyle
+import com.engabd.sendpin.linux.screensaver.IdleGate
 import com.engabd.sendpin.linux.screensaver.ListeningLayout
 import com.engabd.sendpin.ui.design.ColourMood
 import com.engabd.sendpin.linux.ui.applyKey
@@ -305,6 +306,7 @@ private fun ScreensaverCard(model: PanelModel) {
     val scope = rememberCoroutineScope()
     val enabled by settings.screensaverEnabled.collectAsState(initial = true)
     val delayMin by settings.screensaverDelayMin.collectAsState(initial = 10)
+    val delayS by settings.screensaverDelayS.collectAsState(initial = 0)
     val style by settings.screensaverStyle.collectAsState(initial = "gallery")
     val slideS by settings.screensaverSlideS.collectAsState(initial = 20)
     val albums by settings.screensaverAlbums.collectAsState(initial = "all")
@@ -322,12 +324,13 @@ private fun ScreensaverCard(model: PanelModel) {
             scope.launch { settings.setScreensaverEnabled(v) }
         }
         if (enabled) {
-            Label("Begins after")
-            SegmentedControl(
-                options = listOf(1, 5, 10, 20, 30, 60),
-                selected = delayMin,
-                label = { if (it == 60) "1 h" else "$it min" },
-                onSelect = { m -> scope.launch { settings.setScreensaverDelayMin(m) } },
+            DelayPicker(
+                presets = listOf(1, 5, 10, 20, 30, 60),
+                presetMin = delayMin,
+                customS = delayS,
+                presetLabel = { if (it == 60) "1 h" else "$it min" },
+                onPreset = { m -> scope.launch { settings.setScreensaverDelayS(0); settings.setScreensaverDelayMin(m) } },
+                onCustom = { s -> scope.launch { settings.setScreensaverDelayS(s) } },
             )
             Label("Style")
             SegmentedControl(
@@ -566,6 +569,7 @@ private fun ListeningCard(model: PanelModel) {
     val scope = rememberCoroutineScope()
     val enabled by settings.listeningMode.collectAsState(initial = true)
     val delayMin by settings.listeningDelayMin.collectAsState(initial = 3)
+    val delayS by settings.listeningDelayS.collectAsState(initial = 0)
     val clock by settings.listeningClock.collectAsState(initial = true)
     val layout by settings.listeningLayout.collectAsState(initial = "classic")
 
@@ -575,12 +579,13 @@ private fun ListeningCard(model: PanelModel) {
             scope.launch { settings.setListeningMode(v) }
         }
         if (enabled) {
-            Label("Begins after")
-            SegmentedControl(
-                options = listOf(1, 3, 5, 10, 20),
-                selected = delayMin,
-                label = { "$it min" },
-                onSelect = { m -> scope.launch { settings.setListeningDelayMin(m) } },
+            DelayPicker(
+                presets = listOf(1, 3, 5, 10, 20),
+                presetMin = delayMin,
+                customS = delayS,
+                presetLabel = { "$it min" },
+                onPreset = { m -> scope.launch { settings.setListeningDelayS(0); settings.setListeningDelayMin(m) } },
+                onCustom = { s -> scope.launch { settings.setListeningDelayS(s) } },
             )
             Label("Layout")
             SegmentedControl(
@@ -722,6 +727,78 @@ private fun Label(text: String) {
 @Composable
 private fun Hint(text: String) {
     Text(text, color = TextFaint, fontFamily = AppFont, fontSize = 14.sp)
+}
+
+/** The preset row's stand-in for "type your own" — never a real number of minutes. */
+private const val CUSTOM_DELAY = -1
+
+/**
+ * "Begins after": the preset minutes, plus Custom — seconds typed on the panel's own
+ * keyboard, which win over the presets while set (see [IdleGate.delayMs]). Picking a
+ * preset clears the custom value; a Custom left empty falls back to the preset.
+ */
+@Composable
+private fun DelayPicker(
+    presets: List<Int>,
+    presetMin: Int,
+    customS: Int,
+    presetLabel: (Int) -> String,
+    onPreset: (Int) -> Unit,
+    onCustom: (Int) -> Unit,
+) {
+    // The digits being typed; null while the keyboard is closed.
+    var typing by remember { mutableStateOf<String?>(null) }
+    val custom = customS > 0 || typing != null
+    Label("Begins after")
+    SegmentedControl(
+        options = presets + CUSTOM_DELAY,
+        selected = if (custom) CUSTOM_DELAY else presetMin,
+        label = { if (it == CUSTOM_DELAY) "Custom" else presetLabel(it) },
+        onSelect = { m ->
+            if (m == CUSTOM_DELAY) {
+                typing = if (customS > 0) customS.toString() else ""
+            } else {
+                typing = null
+                onPreset(m)
+            }
+        },
+    )
+    if (!custom) return
+    val text = typing
+    val accent = rememberAccent()
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .clip(shape)
+            .background(if (text != null) accent.a(0.10f) else inkOn(0.05f))
+            .border(if (text != null) 2.dp else 1.dp, if (text != null) accent else Hairline, shape)
+            .clickable { typing = if (text == null) customS.toString() else null }
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text("Seconds", color = if (text != null) accent else TextMuted, fontFamily = AppFont, fontSize = 14.sp)
+        Text(
+            if (text != null) "$text▏" else "$customS s",
+            color = TextPrimary,
+            fontFamily = AppFont,
+            fontSize = 19.sp,
+            maxLines = 1,
+        )
+    }
+    Hint("Tap to type how many seconds untouched before it begins (${IdleGate.CUSTOM_MIN_S} s to 24 h).")
+    if (text != null) {
+        OnScreenKeyboard(
+            onKey = { c -> if (c.isDigit() && text.length < 6) typing = text + c },
+            onBackspace = { typing = applyKey(text, OnScreenKeyboardKey.Backspace) },
+            onClear = { typing = "" },
+            onDone = {
+                IdleGate.parseCustomSeconds(text)?.let(onCustom)
+                typing = null
+            },
+        )
+    }
 }
 
 @Composable

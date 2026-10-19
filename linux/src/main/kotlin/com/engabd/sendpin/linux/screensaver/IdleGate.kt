@@ -59,8 +59,31 @@ class IdleGate(private val clock: () -> Long = System::currentTimeMillis) {
         fun shouldShow(enabled: Boolean, playing: Boolean, idleMs: Long, delayMs: Long): Boolean =
             enabled && !playing && idleMs >= delayMs
 
+        /**
+         * Loads ahead by [PREWARM_MS], or by half the delay when that is shorter — a typed
+         * 10 s delay must not keep the preloader running while the panel is in use.
+         */
         fun shouldPrewarm(enabled: Boolean, playing: Boolean, idleMs: Long, delayMs: Long): Boolean =
-            enabled && !playing && idleMs >= delayMs - PREWARM_MS
+            enabled && !playing && idleMs >= delayMs - minOf(PREWARM_MS, delayMs / 2)
+
+        /** Shortest and longest typed delay: under 5 s the panel could never be used; a day is plenty. */
+        const val CUSTOM_MIN_S = 5
+        const val CUSTOM_MAX_S = 86_400
+
+        /**
+         * The idle delay a view waits for: the typed [customS] seconds when one is set
+         * (anything above 0), otherwise the [presetMin] minutes of the preset row, never
+         * under [floorMin].
+         */
+        fun delayMs(presetMin: Int, customS: Int, floorMin: Int = 0): Long =
+            if (customS > 0) customS.coerceIn(CUSTOM_MIN_S, CUSTOM_MAX_S) * 1_000L
+            else presetMin.coerceAtLeast(floorMin) * 60_000L
+
+        /** Typed digits to a delay in seconds, kept in range; null when nothing usable was typed. */
+        fun parseCustomSeconds(text: String): Int? =
+            text.filter(Char::isDigit).take(6).toIntOrNull()
+                ?.takeIf { it > 0 }
+                ?.coerceIn(CUSTOM_MIN_S, CUSTOM_MAX_S)
 
         /**
          * The listening view — the other half of the always-on panel: music playing and

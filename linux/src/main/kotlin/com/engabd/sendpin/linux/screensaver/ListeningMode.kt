@@ -105,6 +105,7 @@ fun ListeningHost(model: PanelModel, gate: IdleGate) {
     val settings = model.settings
     val enabled by settings.listeningMode.collectAsState(initial = true)
     val delayMin by settings.listeningDelayMin.collectAsState(initial = 3)
+    val delayS by settings.listeningDelayS.collectAsState(initial = 0)
     val clock by settings.listeningClock.collectAsState(initial = true)
     val layout by settings.listeningLayout.collectAsState(initial = "classic")
     // The burn-in drift is one setting for both always-on views.
@@ -119,8 +120,8 @@ fun ListeningHost(model: PanelModel, gate: IdleGate) {
     LaunchedEffect(playing) { if (!playing && !forced) showing = false }
     LaunchedEffect(forced) { if (forced) showing = true }
     LaunchedEffect(showing) { model.coverObscured.value = showing }
-    LaunchedEffect(enabled, delayMin, playing) {
-        val delayMs = delayMin.coerceAtLeast(1) * 60_000L
+    LaunchedEffect(enabled, delayMin, delayS, playing) {
+        val delayMs = IdleGate.delayMs(delayMin, delayS, floorMin = 1)
         while (true) {
             if (IdleGate.shouldListen(enabled, playing, gate.idleMs(), delayMs)) showing = true
             delay(1_000)
