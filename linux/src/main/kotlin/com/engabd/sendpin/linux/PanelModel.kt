@@ -229,6 +229,7 @@ class PanelModel(val settings: LinuxSettings) {
             // reporter runs on its own coroutine rather than in here.
             var lastGainReadAt = 0L
             while (isActive) {
+                val pollAt = System.currentTimeMillis()
                 queueLock.withLock {
                     val s = remote?.poll()
                     // Taken straight after the answer: the reporter extrapolates from it.
@@ -266,7 +267,10 @@ class PanelModel(val settings: LinuxSettings) {
                     lastGainReadAt = now
                     mpd?.replayGainMode()?.let { replayGain.value = it }
                 }
-                withTimeoutOrNull(1_000) { wake.receive() }
+                // On a fixed POLL_PERIOD_MS from the start of this poll, not "1 s after
+                // the work": see POLL_PERIOD_MS for why the period is not a whole second.
+                val wait = (POLL_PERIOD_MS - (System.currentTimeMillis() - pollAt)).coerceAtLeast(50L)
+                withTimeoutOrNull(wait) { wake.receive() }
             }
         }
     }
@@ -737,6 +741,23 @@ internal fun identify(queue: List<LocalTrack>, index: Int, playingFile: String?)
 
 /** Polls in a row that must get no answer from MPD before the panel calls it an outage. */
 internal const val MPD_MISSES_FOR_OUTAGE = 3
+
+/**
+ * The poll period, deliberately not a whole second.
+ *
+ * MPD moves `elapsed` in steps of its output chunk: 0.25 s here, bit-perfect 96 kHz
+ * into the Topping (measured 2026-10-19). A reading is stale by however far the poll
+ * landed into the current step. Polling "1 s after the work" made the period
+ * 1.0024 s, so each reading landed 2.4 ms later in the step than the last: the
+ * staleness crept from 0 to 0.25 s and wrapped, roughly every 100 s, and every
+ * reading in [SessionReporter]'s window shared it. Jellyfin saw a sawtooth -
+ * -2.44 ms/s, then +0.22 s - and HueGhost followed it with the lights.
+ *
+ * A fixed 1037 ms moves each reading 37 ms along the step instead, so any 8 in a row
+ * cover a whole 0.25 s step. The window's max ([SessionReporter]) then sits within
+ * ~37 ms of the audio all the time. Prime, so it never locks onto MPD's grid.
+ */
+internal const val POLL_PERIOD_MS = 1_037L
 
 /**
  * The library track that [title] by [artist] most likely is, among search [hits]: the same

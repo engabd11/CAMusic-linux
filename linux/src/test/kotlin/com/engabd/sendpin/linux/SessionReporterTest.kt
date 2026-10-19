@@ -173,6 +173,36 @@ class SessionReporterTest {
         assertEquals(2_700L, r.progress.last().second)
     }
 
+    /**
+     * MPD moves `elapsed` in 0.25 s steps (bit-perfect 96 kHz, measured on the panel).
+     * Polled every [period] ms for five minutes: the worst gap, after the window has
+     * filled, between a reported position and the audio when the report went out.
+     */
+    private suspend fun worstReportError(period: Long): Long {
+        val r = Rig()
+        val step = 250L
+        var t = 0L
+        while (t < 300_000) {
+            r.at(t, state(pos = (t / step) * step))
+            t += period
+        }
+        return r.progress.zip(r.progressAt).drop(16).maxOf { (p, sentAt) -> kotlin.math.abs(p.second - sentAt) }
+    }
+
+    @Test
+    fun `polled on POLL_PERIOD_MS, a stepped elapsed is reported smooth`() = runTest {
+        val worst = worstReportError(POLL_PERIOD_MS)
+        assertTrue(worst <= 40, "each report within ~one phase stride of the audio, was $worst ms")
+    }
+
+    @Test
+    fun `polled a hair over a second, the same elapsed is a sawtooth`() = runTest {
+        // what the panel did: 1 s after the work, ~2.4 ms of it - every reading
+        // landed at nearly the same point of MPD's step as the 15 before it
+        val worst = worstReportError(1_002)
+        assertTrue(worst >= 150, "the 2026-10-19 recording: reports up to 0.22 s behind, was $worst ms")
+    }
+
     @Test
     fun `track change stops the old id and starts the new`() = runTest {
         val r = Rig()
