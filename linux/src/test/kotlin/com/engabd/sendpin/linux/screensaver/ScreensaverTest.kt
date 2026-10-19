@@ -25,6 +25,33 @@ class ScreensaverTest {
     }
 
     @Test
+    fun `a typed delay wins over the preset, kept within range`() {
+        assertEquals(600_000L, IdleGate.delayMs(presetMin = 10, customS = 0))
+        assertEquals(45_000L, IdleGate.delayMs(presetMin = 10, customS = 45))
+        assertEquals(5_000L, IdleGate.delayMs(presetMin = 10, customS = 1))
+        assertEquals(86_400_000L, IdleGate.delayMs(presetMin = 10, customS = 999_999))
+        // The listening view's floor applies to presets only.
+        assertEquals(60_000L, IdleGate.delayMs(presetMin = 0, customS = 0, floorMin = 1))
+        assertEquals(20_000L, IdleGate.delayMs(presetMin = 0, customS = 20, floorMin = 1))
+    }
+
+    @Test
+    fun `typed seconds parse to a usable delay or nothing`() {
+        assertEquals(90, IdleGate.parseCustomSeconds("90"))
+        assertEquals(IdleGate.CUSTOM_MIN_S, IdleGate.parseCustomSeconds("2"))
+        assertEquals(IdleGate.CUSTOM_MAX_S, IdleGate.parseCustomSeconds("999999"))
+        assertNull(IdleGate.parseCustomSeconds(""))
+        assertNull(IdleGate.parseCustomSeconds("0"))
+    }
+
+    @Test
+    fun `a short delay prewarms halfway, not before the panel is idle`() {
+        val delay = 10_000L
+        assertTrue(IdleGate.shouldPrewarm(true, false, 5_000, delay))
+        assertFalse(IdleGate.shouldPrewarm(true, false, 4_999, delay))
+    }
+
+    @Test
     fun `prewarms half a minute before it shows`() {
         val delay = 600_000L
         assertTrue(IdleGate.shouldPrewarm(true, false, delay - IdleGate.PREWARM_MS, delay))
