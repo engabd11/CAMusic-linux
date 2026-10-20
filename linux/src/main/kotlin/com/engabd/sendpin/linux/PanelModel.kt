@@ -113,6 +113,8 @@ class PanelModel(val settings: LinuxSettings) {
     val replayGain = MutableStateFlow<String?>(null)
 
     private var mpd: MpdClient? = null
+    /** The live MPD connection, for the image loader's `mpd-art://` covers. */
+    internal val mpdClient: MpdClient? get() = mpd
     private var remote: MpdRemote? = null
     private var jellyfin: JellyfinClient? = null
 

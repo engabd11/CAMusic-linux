@@ -57,8 +57,6 @@ private fun panelSize(): Pair<Dp, Dp> {
 }
 
 fun main() = application {
-    // One image loader for the whole panel: memory and disk caches sized for a wall of covers.
-    coil3.compose.setSingletonImageLoaderFactory { context -> com.engabd.sendpin.linux.ui.panelImageLoader(context) }
     val settings = remember { LinuxSettings(LinuxSettings.defaultPath()) }
     val model = remember {
         PanelModel(settings).also { m ->
@@ -66,6 +64,11 @@ fun main() = application {
             // SIGTERM — ends the Jellyfin session, so HueGhost lets go at once.
             Runtime.getRuntime().addShutdownHook(Thread { m.close() })
         }
+    }
+    // One image loader for the whole panel: memory and disk caches sized for a wall of
+    // covers, and MPD's own artwork for a queue the panel did not build.
+    coil3.compose.setSingletonImageLoaderFactory { context ->
+        com.engabd.sendpin.linux.ui.panelImageLoader(context) { model.mpdClient }
     }
     // Clients built from settings; the poll loop starts here.
     LaunchedEffect(Unit) { model.start() }

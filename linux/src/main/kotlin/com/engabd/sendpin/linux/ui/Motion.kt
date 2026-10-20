@@ -170,8 +170,10 @@ fun Modifier.riseIn(index: Int, enabled: Boolean = true): Modifier {
  * not fetch the library's art again, and a short crossfade so a cover arrives rather than
  * appears.
  */
-fun panelImageLoader(context: PlatformContext): ImageLoader =
+fun panelImageLoader(context: PlatformContext, mpd: () -> com.engabd.sendpin.mpd.MpdClient? = { null }): ImageLoader =
     ImageLoader.Builder(context)
+        // Covers MPD serves down its socket (a queue the panel did not build itself).
+        .components { add(com.engabd.sendpin.mpd.MpdArtFetcher.Factory(mpd)) }
         .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.25).build() }
         .diskCache {
             DiskCache.Builder()
