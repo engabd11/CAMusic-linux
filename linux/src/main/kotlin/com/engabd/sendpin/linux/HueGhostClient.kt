@@ -36,7 +36,8 @@ class HueGhostClient(
 
     fun isConfigured(): Boolean = base.isNotBlank()
 
-    private fun url(path: String) = "$base/api$path"
+    /** `/api` + [path]; [path] starts with a slash. Internal for the test that pins the routes. */
+    internal fun url(path: String) = "$base/api$path"
 
     private fun requestBuilder(): Request.Builder {
         val b = Request.Builder()
@@ -45,10 +46,10 @@ class HueGhostClient(
     }
 
     /** Turn sync on. Returns true on HTTP success. */
-    suspend fun on(): Boolean = postEmpty("on")
+    suspend fun on(): Boolean = postEmpty("/on")
 
     /** Turn sync off. Returns true on HTTP success. */
-    suspend fun off(): Boolean = postEmpty("off")
+    suspend fun off(): Boolean = postEmpty("/off")
 
     /**
      * Client-side toggle (no server route): read whether sync is switched on, then act.
@@ -83,6 +84,8 @@ class HueGhostClient(
         enabled: Boolean? = null,
     ): Boolean = post(url("/set"), setBody(mode, intensity, offsetS, enabled))
 
+    // The path keeps its slash: without it this sent `/apioff`, which HueGhost answers
+    // with "unknown path", and Start and Stop silently did nothing.
     private suspend fun postEmpty(path: String): Boolean = post(url(path), "{}")
 
     private suspend fun post(url: String, body: String): Boolean = withContext(Dispatchers.IO) {

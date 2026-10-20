@@ -136,6 +136,9 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
     var status by remember { mutableStateOf<HueGhostClient.Status?>(null) }
     var polled by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    // A refused command, said for a few seconds under the switch rather than not at all.
+    var problem by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(problem) { if (problem != null) { delay(5_000); problem = null } }
 
     LaunchedEffect(hg) {
         while (true) {
@@ -176,9 +179,22 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
                 onToggle = {
                     val wasOn = status?.on == true
                     status = status?.copy(enabled = !wasOn, running = !wasOn && status?.running == true)
-                    act { if (wasOn) hg.off() else hg.on() }
+                    act {
+                        val ok = if (wasOn) hg.off() else hg.on()
+                        if (!ok) problem = if (wasOn) "HueGhost didn't take Stop. Try again." else "HueGhost didn't take Start. Try again."
+                    }
                 },
             )
+
+            androidx.compose.animation.AnimatedVisibility(problem != null) {
+                Text(
+                    problem ?: "",
+                    color = androidx.compose.ui.graphics.Color(0xFFE8B66B),
+                    fontFamily = AppFont,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(horizontal = PageGutter),
+                )
+            }
 
             GlassCard(Modifier.padding(horizontal = PageGutter)) {
                 CardTitle("Mode", "What the lights follow.")

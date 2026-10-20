@@ -66,4 +66,11 @@ class HueGhostClientTest {
         // An older HueGhost with no `enabled` falls back to whether it is syncing.
         kotlin.test.assertEquals(true, HueGhostClient.parseStatus("""{"state": "syncing"}""")!!.on)
     }
+
+    @Test
+    fun startAndStopHitTheRealRoutes() {
+        val c = HueGhostClient("http://hg.lan:8787/", "t")
+        kotlin.test.assertEquals("http://hg.lan:8787/api/off", c.url("/off"))
+        kotlin.test.assertEquals("http://hg.lan:8787/api/on", c.url("/on"))
+    }
 }
