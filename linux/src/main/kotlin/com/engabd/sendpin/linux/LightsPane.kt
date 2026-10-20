@@ -172,7 +172,12 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
                 status = status,
                 reachable = !polled || status != null,
                 busy = busy,
-                onToggle = { act { hg.toggle() } },
+                // Act on what the button showed, not on a fresh read: Stop stops.
+                onToggle = {
+                    val wasOn = status?.on == true
+                    status = status?.copy(enabled = !wasOn, running = !wasOn && status?.running == true)
+                    act { if (wasOn) hg.off() else hg.on() }
+                },
             )
 
             GlassCard(Modifier.padding(horizontal = PageGutter)) {
@@ -240,6 +245,9 @@ private fun SyncHero(
     val palette = LocalPalette.current
     val accent = rememberAccent()
     val running = status?.running == true
+    // Switched on (the button) is not the same as moving (the orbs): between songs, or
+    // while HueGhost waits for the music, sync is on and the lights are still.
+    val on = status?.on == true
     val t = rememberInfiniteTransition(label = "hero")
     val pulse by t.animateFloat(
         0.75f, 1f,
@@ -268,12 +276,13 @@ private fun SyncHero(
             horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Eyebrow(if (running) "Syncing" else "Idle", if (running) accent else TextMuted)
+                Eyebrow(if (running) "Syncing" else if (on) "On" else "Off", if (on) accent else TextMuted)
                 Text(
                     when {
                         !reachable -> "HueGhost unreachable"
                         status == null -> "Connecting…"
                         running -> "The room is in sync"
+                        on -> "Waiting for the music"
                         else -> "Lights are resting"
                     },
                     color = TextPrimary,
@@ -295,8 +304,8 @@ private fun SyncHero(
                 Modifier
                     .size(128.dp)
                     .clip(CircleShape)
-                    .background(if (running) inkOn(0.12f) else accent)
-                    .border(2.dp, if (running) accent else Color.Transparent, CircleShape)
+                    .background(if (on) inkOn(0.12f) else accent)
+                    .border(2.dp, if (on) accent else Color.Transparent, CircleShape)
                     .clickable(enabled = !busy && reachable, onClick = onToggle)
                     .alpha(if (busy) 0.5f else 1f),
                 contentAlignment = Alignment.Center,
@@ -304,12 +313,12 @@ private fun SyncHero(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         Icons.Default.PowerSettingsNew, null,
-                        tint = if (running) accent else com.engabd.sendpin.ui.theme.Ink,
+                        tint = if (on) accent else com.engabd.sendpin.ui.theme.Ink,
                         modifier = Modifier.size(44.dp),
                     )
                     Text(
-                        if (running) "Stop" else "Start",
-                        color = if (running) accent else com.engabd.sendpin.ui.theme.Ink,
+                        if (on) "Stop" else "Start",
+                        color = if (on) accent else com.engabd.sendpin.ui.theme.Ink,
                         fontFamily = AppFont,
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp,

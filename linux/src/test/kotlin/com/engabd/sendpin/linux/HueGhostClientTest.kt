@@ -55,4 +55,15 @@ class HueGhostClientTest {
         assertEquals(null, HueGhostClient.parseStatus(""))
         assertEquals(null, HueGhostClient.parseStatus("not json"))
     }
+
+    @Test
+    fun startStopFollowsEnabledNotTheMomentaryState() {
+        val idleButOn = HueGhostClient.parseStatus("""{"enabled": true, "state": "idle"}""")!!
+        kotlin.test.assertEquals(true, idleButOn.on)
+        kotlin.test.assertEquals(false, idleButOn.running)
+        val off = HueGhostClient.parseStatus("""{"enabled": false, "state": "idle"}""")!!
+        kotlin.test.assertEquals(false, off.on)
+        // An older HueGhost with no `enabled` falls back to whether it is syncing.
+        kotlin.test.assertEquals(true, HueGhostClient.parseStatus("""{"state": "syncing"}""")!!.on)
+    }
 }

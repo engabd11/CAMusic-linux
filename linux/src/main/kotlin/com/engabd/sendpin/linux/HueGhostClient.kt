@@ -50,8 +50,13 @@ class HueGhostClient(
     /** Turn sync off. Returns true on HTTP success. */
     suspend fun off(): Boolean = postEmpty("off")
 
-    /** Client-side toggle (no server route): read state, then act. */
-    suspend fun toggle(): Boolean = when (status()?.running) {
+    /**
+     * Client-side toggle (no server route): read whether sync is switched on, then act.
+     * Decided on `enabled`, not on `state`: HueGhost's state moves through other values
+     * while it is on (`idle` between songs, while it waits for the follow target), and
+     * reading one of those turned a press on Stop into an `on`.
+     */
+    suspend fun toggle(): Boolean = when (status()?.on) {
         true -> off()
         else -> on()
     }
@@ -92,7 +97,10 @@ class HueGhostClient(
 
     /** What the Lights pane shows — HueGhost v2.8's top-level status shape. */
     data class Status(
+        /** The lights are moving right now (`state == syncing`). */
         val running: Boolean,
+        /** Sync is switched on, whether or not it is moving this second; null on a HueGhost too old to say. */
+        val enabled: Boolean? = null,
         val mode: String?,
         val intensity: String?,
         /** The follow target's item, when a session is being tracked. */
@@ -100,7 +108,10 @@ class HueGhostClient(
         /** HueGhost's music-sync offset, in seconds. */
         val offsetS: Double?,
         val version: String?,
-    )
+    ) {
+        /** What Start/Stop acts on: switched on, falling back to moving on an older HueGhost. */
+        val on: Boolean get() = enabled ?: running
+    }
 
     companion object {
         /**
@@ -144,6 +155,7 @@ class HueGhostClient(
                     root[key]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 Status(
                     running = s("state") == "syncing",
+                    enabled = root["enabled"]?.jsonPrimitive?.booleanOrNull,
                     mode = s("mode"),
                     intensity = s("intensity"),
                     followItem = root["follow"]?.jsonObject?.get("item")
