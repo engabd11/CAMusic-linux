@@ -1,5 +1,6 @@
 package com.engabd.sendpin.linux.screensaver
 
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -147,8 +148,10 @@ fun ListeningHost(model: PanelModel, gate: IdleGate) {
 
     AnimatedVisibility(
         visibleState = visibility,
-        enter = fadeIn(tween(1_600)),
-        exit = fadeOut(tween(600)),
+        // It settles in from slightly larger as it fades up, and steps back as it goes.
+        enter = fadeIn(tween(1_600, easing = com.engabd.sendpin.linux.ui.Motion.Standard)) +
+            androidx.compose.animation.scaleIn(tween(2_200, easing = com.engabd.sendpin.linux.ui.Motion.Emphasized), initialScale = 1.04f),
+        exit = fadeOut(tween(600)) + androidx.compose.animation.scaleOut(tween(600), targetScale = 1.02f),
     ) {
         ListeningView(model, ListeningLayout.from(layout), clock = clock, drift = drift, captures = captures, onTap = ::dismiss)
     }
@@ -660,11 +663,8 @@ private fun TrackWords(
 /** The track's progress: a hairline, no knob — something to glance at, not to drag. */
 @Composable
 private fun ProgressHairline(model: PanelModel, track: LocalTrack?, widthFraction: Float, align: TextAlign = TextAlign.Start) {
-    val remote by model.state.collectAsState()
-    val dur = remote?.durationMs?.takeIf { it > 0 } ?: track?.durationMs ?: 0L
-    val target = if (dur > 0) ((remote?.positionMs ?: 0L).toFloat() / dur).coerceIn(0f, 1f) else 0f
-    // the poll moves once a second; glide between readings rather than step
-    val fraction by animateFloatAsState(target, tween(1_000, easing = LinearEasing), label = "listeningProgress")
+    // Carried on by the frame clock between MPD's polls, so it glides rather than steps.
+    val fraction = com.engabd.sendpin.linux.station.rememberSmoothProgress(model, track?.durationMs ?: 0L)
     Box(
         Modifier
             .fillMaxWidth(widthFraction)
@@ -673,9 +673,15 @@ private fun ProgressHairline(model: PanelModel, track: LocalTrack?, widthFractio
     ) {
         Box(
             Modifier
-                .fillMaxWidth(fraction)
+                .fillMaxWidth()
                 .height(2.dp)
-                .background(Color.White.copy(alpha = 0.78f), RoundedCornerShape(1.dp)),
+                .drawBehind {
+                    drawRoundRect(
+                        Color.White.copy(alpha = 0.78f),
+                        size = size.copy(width = size.width * fraction()),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx()),
+                    )
+                },
         )
     }
 }

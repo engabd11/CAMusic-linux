@@ -7,6 +7,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -164,11 +166,17 @@ fun WaveSeekBar(
     trackHeight: Dp = 4.dp,
     knob: Dp = 13.dp,
     onCommit: ((Float) -> Unit)? = null,
+    /**
+     * The playhead read on every frame (0..1), so the bar glides between the 1 s polls
+     * instead of stepping. Read only while drawing; [value] is still what a drag starts from.
+     */
+    valueAt: (() -> Float)? = null,
 ) {
     val accent = rememberAccent()
     var widthPx by remember { mutableIntStateOf(1) }
     val gesture = rememberSliderGesture(value)
-    val v = gesture.display(value)
+    // The knob grows under the finger and settles back, rather than jumping between sizes.
+    val knobScale by animateFloatAsState(if (gesture.dragging) 1.45f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow), label = "knob")
 
     fun commit(f: Float) {
         val c = f.coerceIn(0f, 1f)
@@ -203,13 +211,13 @@ fun WaveSeekBar(
             .sliderInput(gesture, { widthPx }, onChange, ::commit),
         contentAlignment = Alignment.CenterStart,
     ) {
-        val fill = v.coerceIn(0f, 1f)
         // Resolved in composition, referenced (not called) in the draw lambda:
         // TextPrimary is @Composable, a Canvas draw lambda is not.
         val trackColor = TextPrimary.copy(alpha = 0.14f)
         val knobColor = TextPrimary
         val dragging = gesture.dragging
         Canvas(Modifier.matchParentSize()) {
+            val fill = gesture.display(if (gesture.dragging || gesture.latched != null) value else valueAt?.invoke() ?: value)
             val centerY = size.height / 2f
             val strokePx = trackHeight.toPx()
             val fillWidthPx = size.width * fill
@@ -263,7 +271,7 @@ fun WaveSeekBar(
             val knobPx = knob.toPx()
             drawCircle(
                 color = knobColor,
-                radius = (if (dragging) knobPx * 1.35f else knobPx) / 2f,
+                radius = knobPx * knobScale / 2f,
                 center = Offset(fillWidthPx, centerY),
             )
         }

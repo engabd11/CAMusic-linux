@@ -1,5 +1,6 @@
 package com.engabd.sendpin.linux
 
+import com.engabd.sendpin.linux.ui.pressScale
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -680,6 +681,7 @@ internal fun TrackRow(
     Row(
         Modifier
             .riseIn(index, enabled = index >= 0)
+            .pressScale(0.985f)
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .heightIn(min = 72.dp)

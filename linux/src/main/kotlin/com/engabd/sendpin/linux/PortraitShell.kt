@@ -1,5 +1,11 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
+import com.engabd.sendpin.linux.ui.pressScale
+import com.engabd.sendpin.linux.station.rememberSmoothProgress
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
@@ -88,6 +94,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -519,11 +526,13 @@ private fun NowPlayingCover(
             // the knob while playing, a flat rail when paused. Scrub commits on
             // release; the poll reconciles (the bar's latch holds the target until
             // the polled position catches up).
+            val smooth = rememberSmoothProgress(model, durMs)
             WaveSeekBar(
                 value = if (durMs > 0) (posMs.toFloat() / durMs).coerceIn(0f, 1f) else 0f,
                 onChange = { },
                 playing = playing,
                 onCommit = { f -> scope.launch { model.seekTo((f * durMs).toLong()) } },
+                valueAt = smooth,
             )
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(formatMs(posMs), color = TextMuted, fontSize = if (big) 26.sp else 14.sp, fontFamily = MonoFont)
@@ -754,7 +763,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
     val track = queue.getOrNull(index)
     val playing = state?.playing ?: false
     val durMs = state?.durationMs?.takeIf { it > 0 } ?: track?.durationMs ?: 0L
-    val progress = if (durMs > 0) ((state?.positionMs ?: 0L).toFloat() / durMs).coerceIn(0f, 1f) else 0f
+    val progress = rememberSmoothProgress(model, durMs)
 
     // Enough upward travel to mean it, in pixels — the Android bar's threshold.
     val expandPx = with(LocalDensity.current) { 24.dp.toPx() }
@@ -782,8 +791,8 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
         Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(accent.a(0.22f), Color.Transparent))))
         // Progress along the foot of the bar.
         Box(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(3.dp)
-                .background(accent)
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp)
+                .drawBehind { drawRect(accent, size = size.copy(width = size.width * progress())) },
         )
         Row(
             Modifier.fillMaxSize().padding(horizontal = 12.dp),
@@ -797,8 +806,17 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                 modifier = Modifier.size(60.dp),
             )
 
-            // Title + artist + where it is playing.
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            // Title + artist + where it is playing; on a track change the new words rise in.
+            AnimatedContent(
+                targetState = track?.id,
+                transitionSpec = {
+                    (fadeIn(tween(Motion.PAGE_MS, 80)) + slideInVertically(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { it / 3 })
+                        .togetherWith(fadeOut(tween(Motion.FADE_MS)) + slideOutVertically(tween(Motion.FADE_MS)) { -it / 4 })
+                },
+                label = "miniWords",
+                modifier = Modifier.weight(1f),
+            ) { _ ->
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
                     track?.title ?: "Nothing playing",
                     color = if (track == null) TextSecondary else TextPrimary,
@@ -828,12 +846,13 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                     )
                 }
             }
+            }
 
             // Transport — nothing to drive when nothing is queued; the bar then stays
             // a plain tap-to-open target instead of offering dead buttons.
             if (track != null) {
                 Box(
-                    Modifier.size(56.dp).clip(CircleShape).clickable {
+                    Modifier.size(56.dp).pressScale(0.86f).clip(CircleShape).clickable {
                         scope.launch { model.previous() }
                     },
                     contentAlignment = Alignment.Center,
@@ -848,7 +867,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
                     glow = 0.dp,
                 ) { scope.launch { model.togglePause() } }
                 Box(
-                    Modifier.size(56.dp).clip(CircleShape).clickable {
+                    Modifier.size(56.dp).pressScale(0.86f).clip(CircleShape).clickable {
                         scope.launch { model.next() }
                     },
                     contentAlignment = Alignment.Center,
@@ -871,30 +890,48 @@ private fun PortraitNavBar(model: PanelModel, selected: PanelTab, on: (PanelTab)
     val status by model.statusLine.collectAsState()
     val accent = rememberAccent()
     Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 6.dp)) {
-        Row(
+        // One lit pill under the tabs that slides to the chosen one, rather than each tab
+        // lighting and dimming on its own.
+        val slot = PanelTab.entries.indexOf(selected).toFloat()
+        val pill by animateFloatAsState(slot, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow), label = "navPill")
+        Box(
             Modifier
                 .fillMaxWidth()
                 .height(PanelMetrics.NavHeight + 8.dp)
                 .glassSurface(RoundedCornerShape(26.dp), inkOn(0.07f), border = Hairline)
-                .padding(6.dp),
+                .padding(6.dp)
+                .drawBehind {
+                    val n = PanelTab.entries.size
+                    val gap = 6.dp.toPx()
+                    val w = (size.width - gap * (n - 1)) / n
+                    drawRoundRect(
+                        accent.a(0.18f),
+                        topLeft = Offset(pill * (w + gap), 0f),
+                        size = Size(w, size.height),
+                        cornerRadius = CornerRadius(20.dp.toPx()),
+                    )
+                },
+        ) {
+        Row(
+            Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             PanelTab.entries.forEach { t ->
                 val active = t == selected
-                val bg by animateColorAsState(if (active) accent.a(0.18f) else Color.Transparent, tween(220), label = "navBg")
-                val tint = if (active) accent else TextMuted
+                val tint by animateColorAsState(if (active) accent else TextMuted, tween(Motion.FADE_MS), label = "navTint")
+                val lift by animateFloatAsState(if (active) 1.08f else 1f, spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium), label = "navLift")
                 Column(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
+                        .pressScale(0.92f)
                         .clip(RoundedCornerShape(20.dp))
-                        .background(bg)
                         .clickable { on(t) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
                 ) {
-                    Icon(iconFor(t), t.label, tint = tint, modifier = Modifier.size(28.dp))
+                    Icon(iconFor(t), t.label, tint = tint, modifier = Modifier.size(28.dp).graphicsLayer { scaleX = lift; scaleY = lift })
                     Text(
                         t.label,
                         color = if (active) TextPrimary else TextMuted,
@@ -906,18 +943,8 @@ private fun PortraitNavBar(model: PanelModel, selected: PanelTab, on: (PanelTab)
                 }
             }
         }
-        if (status.isNotBlank()) {
-            Text(
-                status,
-                color = TextFaint,
-                fontFamily = AppFont,
-                fontSize = PanelMetrics.NavStatus,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
-            )
         }
+        StatusLine(model, status)
     }
 }
 
@@ -926,4 +953,54 @@ private fun iconFor(tab: PanelTab): ImageVector = when (tab) {
     PanelTab.QUEUE -> Icons.AutoMirrored.Filled.QueueMusic
     PanelTab.LIGHTS -> Icons.Default.Lightbulb
     PanelTab.SETTINGS -> Icons.Default.Settings
+}
+
+/** "MPD connected — host  ·  Jellyfin connected": the connection summary with nothing wrong in it. */
+private val HealthyStatus = Regex("""^MPD connected — \S+( {2}· {2}Jellyfin connected)?$""")
+
+/**
+ * Under the nav: when everything answers, two small lit dots (MPD, Jellyfin) and nothing
+ * else to read; when something needs saying (a refused command, a server down, a path
+ * hint) the full line, in a warmer colour. A station shows its health at a glance and
+ * keeps the words for when they matter.
+ */
+@Composable
+private fun StatusLine(model: PanelModel, status: String) {
+    val mpdUp by model.mpdUp.collectAsState()
+    val jfProblem by model.jellyfinProblem.collectAsState()
+    val healthy = HealthyStatus.matches(status.trim())
+    androidx.compose.animation.AnimatedContent(
+        targetState = healthy to status,
+        contentKey = { if (it.first) "ok" else it.second },
+        transitionSpec = { fadeIn(tween(Motion.PAGE_MS)) togetherWith fadeOut(tween(Motion.FADE_MS)) },
+        label = "status",
+        modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+    ) { (ok, line) ->
+        if (ok) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                StatusDot("MPD", mpdUp)
+                Spacer(Modifier.width(18.dp))
+                if (line.contains("Jellyfin")) StatusDot("Jellyfin", jfProblem == null)
+            }
+        } else if (line.isNotBlank()) {
+            Text(
+                line,
+                color = Color(0xFFE8B66B).a(0.85f),
+                fontFamily = AppFont,
+                fontSize = PanelMetrics.NavStatus,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusDot(label: String, up: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(if (up) Color(0xFF6BD49A) else Color(0xFFE8B66B)))
+        Text(label.uppercase(), color = TextFaint, fontFamily = AppFont, fontSize = 10.sp, letterSpacing = 1.4.sp, maxLines = 1)
+    }
 }

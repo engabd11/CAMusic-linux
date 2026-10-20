@@ -105,7 +105,7 @@ private const val FILL_LEAD_MS = 110L
  * redraws on every frame and nothing recomposes. The frame clock only runs while [live].
  */
 @Composable
-internal fun rememberFramePlayhead(model: PanelModel, live: Boolean): () -> Long {
+internal fun rememberFramePlayhead(model: PanelModel, live: Boolean, leadMs: Long = FILL_LEAD_MS): () -> Long {
     val remote by model.state.collectAsState()
     val head = remember { SmoothPlayhead() }
     LaunchedEffect(remote) {
@@ -117,10 +117,27 @@ internal fun rememberFramePlayhead(model: PanelModel, live: Boolean): () -> Long
     return remember {
         {
             frame.longValue // read so the caller's draw block is invalidated each frame
-            head.valueAt(System.currentTimeMillis()) + FILL_LEAD_MS
+            head.valueAt(System.currentTimeMillis()) + leadMs
         }
     }
 }
+
+/**
+ * How far through the playing track MPD is, 0..1, carried on by the frame clock between
+ * polls — for progress bars that should glide rather than step once a second. Read it
+ * inside a draw block: only that drawing follows the frames, nothing recomposes. The
+ * frame clock runs only while music plays.
+ */
+@Composable
+internal fun rememberSmoothProgress(model: PanelModel, fallbackDurationMs: Long = 0L): () -> Float {
+    val remote by model.state.collectAsState()
+    val head = rememberFramePlayhead(model, live = remote?.playing == true, leadMs = 0L)
+    val dur = rememberUpdatedStateCompat(remote?.durationMs?.takeIf { it > 0 } ?: fallbackDurationMs)
+    return remember { { val d = dur.value; if (d > 0) (head().toFloat() / d).coerceIn(0f, 1f) else 0f } }
+}
+
+@Composable
+private fun <T> rememberUpdatedStateCompat(v: T) = androidx.compose.runtime.rememberUpdatedState(v)
 
 /** The lines as the sheet draws them: the source's word times, or estimated ones when [karaoke]. */
 internal fun karaokeLines(lyrics: MaLyrics, karaoke: Boolean): List<LyricLine> {

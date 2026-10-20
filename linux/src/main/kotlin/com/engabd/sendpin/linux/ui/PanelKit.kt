@@ -1,5 +1,6 @@
 package com.engabd.sendpin.linux.ui
 
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -322,6 +323,7 @@ fun CircleButton(
     Box(
         Modifier
             .size(size)
+            .pressScale(0.9f)
             .then(
                 if (active) Modifier.clip(CircleShape).background(accent)
                 else Modifier.glassSurface(CircleShape, inkOn(0.08f), border = Hairline)
@@ -350,6 +352,7 @@ fun PillButton(
     Row(
         modifier
             .heightIn(min = 56.dp)
+            .pressScale(0.95f)
             .then(
                 if (filled) Modifier.clip(PanelShapes.Pill).background(accent)
                 else Modifier.glassSurface(PanelShapes.Pill, inkOn(0.08f), border = Hairline)
@@ -381,24 +384,40 @@ fun <T> SegmentedControl(
     height: Dp = 56.dp,
 ) {
     val accent = rememberAccent()
+    // One accent thumb that slides to the chosen segment, with a little give as it lands.
+    val at = options.indexOf(selected)
+    val thumb by androidx.compose.animation.core.animateFloatAsState(
+        at.coerceAtLeast(0).toFloat(),
+        androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+        label = "segThumb",
+    )
     Row(
         modifier
             .fillMaxWidth()
             .height(height)
             .glassSurface(PanelShapes.Pill, inkOn(0.06f), border = Hairline)
-            .padding(5.dp),
+            .padding(5.dp)
+            .drawBehind {
+                if (at < 0 || options.isEmpty()) return@drawBehind
+                val gap = 4.dp.toPx()
+                val w = (size.width - gap * (options.size - 1)) / options.size
+                drawRoundRect(
+                    accent,
+                    topLeft = androidx.compose.ui.geometry.Offset(thumb * (w + gap), 0f),
+                    size = androidx.compose.ui.geometry.Size(w, size.height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2f),
+                )
+            },
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         options.forEach { opt ->
             val on = opt == selected
-            val bg by animateColorAsState(if (on) accent else Color.Transparent, tween(220), label = "segBg")
-            val fg = if (on) Ink else TextSecondary
+            val fg by animateColorAsState(if (on) Ink else TextSecondary, tween(220), label = "segFg")
             Row(
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .clip(PanelShapes.Pill)
-                    .background(bg)
                     .clickable { onSelect(opt) },
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,

@@ -143,7 +143,10 @@ internal suspend fun runFling(
     var previousValue = 0f
     AnimationState(0f, startVelocity).animateDecay(splineBasedDecay(density)) {
         val delta = value - previousValue
-        state.dispatchRawDelta(delta)
+        val consumed = state.dispatchRawDelta(delta)
         previousValue = value
+        // Against the end of the list: stop, rather than run the rest of the fling
+        // into a wall, still asking for frames nobody can see move.
+        if (kotlin.math.abs(delta) > 0.5f && kotlin.math.abs(consumed) < kotlin.math.abs(delta) * 0.5f) cancelAnimation()
     }
 }

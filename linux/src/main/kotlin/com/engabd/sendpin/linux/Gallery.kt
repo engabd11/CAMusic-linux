@@ -1,5 +1,6 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -143,8 +144,11 @@ internal fun CoverFlow(
     onOpen: (MaItem) -> Unit,
     onNearEnd: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    /** True while something covers the page (the listening view, the gallery): no turning. */
+    paused: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
+    val hidden by rememberUpdatedState(paused)
     val position = remember { Animatable(start.coerceIn(0, (items.size - 1).coerceAtLeast(0)).toFloat()) }
     val centre by remember { derivedStateOf { position.value.roundToInt().coerceIn(0, (items.size - 1).coerceAtLeast(0)) } }
     var touchedAt by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -164,7 +168,7 @@ internal fun CoverFlow(
     LaunchedEffect(items.size) {
         while (true) {
             delay(FLOW_STEP_MS)
-            if (System.currentTimeMillis() - touchedAt < FLOW_IDLE_MS || position.isRunning) continue
+            if (hidden || System.currentTimeMillis() - touchedAt < FLOW_IDLE_MS || position.isRunning) continue
             val next = if (centre + 1 < items.size) centre + 1 else 0
             position.animateTo(next.toFloat(), tween(1_400, easing = Motion.Standard))
         }
@@ -356,8 +360,10 @@ internal fun HeroCarousel(
     onOpen: (MaItem) -> Unit,
     onPlay: (MaItem) -> Unit,
     modifier: Modifier = Modifier,
+    paused: Boolean = false,
 ) {
     if (slides.isEmpty()) return
+    val hidden by rememberUpdatedState(paused)
     var index by remember(slides) { mutableStateOf(0) }
     var forward by remember { mutableStateOf(true) }
     var touchedAt by remember { mutableLongStateOf(0L) }
@@ -371,7 +377,7 @@ internal fun HeroCarousel(
     LaunchedEffect(slides) {
         while (true) {
             delay(HERO_STEP_MS)
-            if (System.currentTimeMillis() - touchedAt > HERO_STEP_MS * 2) go(1)
+            if (!hidden && System.currentTimeMillis() - touchedAt > HERO_STEP_MS * 2) go(1)
         }
     }
 

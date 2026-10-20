@@ -237,6 +237,7 @@ internal fun prettyDate(iso: String): String = runCatching {
 internal fun AboutCard(title: String, text: String?, facts: List<Pair<String, String>>, accent: Color) {
     if (text.isNullOrBlank() && facts.isEmpty()) return
     var open by remember(text) { mutableStateOf(false) }
+    var overflows by remember(text) { mutableStateOf(false) }
     Column(Modifier.padding(top = 12.dp)) {
         SectionHeader(title)
         Column(
@@ -259,9 +260,10 @@ internal fun AboutCard(title: String, text: String?, facts: List<Pair<String, St
                     lineHeight = 26.sp,
                     maxLines = if (open) Int.MAX_VALUE else 5,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable { open = !open },
+                    onTextLayout = { if (!open) overflows = it.hasVisualOverflow },
+                    modifier = Modifier.clickable(enabled = overflows || open) { open = !open },
                 )
-                if (text.length > 280) {
+                if (overflows || open) {
                     Text(
                         if (open) "Show less" else "Read more",
                         color = accent, fontFamily = AppFont, fontWeight = FontWeight.Bold, fontSize = 15.sp,

@@ -1,5 +1,6 @@
 package com.engabd.sendpin.linux
 
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -149,13 +150,13 @@ fun QueuePane(modifier: Modifier, model: PanelModel) {
             subtitle = if (queue.isEmpty()) null else
                 "${queue.size} ${if (queue.size == 1) "song" else "songs"}  ·  ${formatTotal(remaining)} left",
         ) {
-            com.engabd.sendpin.linux.station.RadioChip(model)
             if (queue.isNotEmpty()) {
                 PillButton("Shuffle", icon = Icons.Default.Shuffle, filled = false, onClick = { scope.launch { model.shuffleQueue() } })
                 PillButton("Clear", icon = Icons.Default.DeleteSweep, filled = false, onClick = { scope.launch { model.clearQueue() } })
             }
         }
 
+        com.engabd.sendpin.linux.station.RadioBanner(model, Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp))
         if (queue.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 EmptyState(
@@ -167,6 +168,13 @@ fun QueuePane(modifier: Modifier, model: PanelModel) {
             return
         }
 
+        // Stable identities: a track's file and which copy of it this is. Keyed by position,
+        // removing one row rebuilt every row under it and the list jumped; keyed by
+        // identity, the rows below glide up into the gap.
+        val keys = remember(queue) {
+            val seen = HashMap<String, Int>()
+            queue.map { t -> val id = t.scrobbleId ?: t.id; "$id#${seen.merge(id, 1, Int::plus)}" }
+        }
         val listState = rememberLazyListState()
         // Open on the playing track, not the top of a long queue's history.
         LaunchedEffect(Unit) { nowIndex?.let { if (it > 2) listState.scrollToItem(it + 1) } }
@@ -177,10 +185,26 @@ fun QueuePane(modifier: Modifier, model: PanelModel) {
                 modifier = Modifier.fillMaxSize().touchDragScroll(listState),
             ) {
                 nowIndex?.let { i ->
-                    item(key = "now") { NowPlayingCard(queue[i], state) }
+                    item(key = "now") {
+                        androidx.compose.animation.AnimatedContent(
+                            targetState = queue[i],
+                            contentKey = { it.scrobbleId ?: it.id },
+                            transitionSpec = {
+                                (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(com.engabd.sendpin.linux.ui.Motion.PAGE_MS, 80)) +
+                                    androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(com.engabd.sendpin.linux.ui.Motion.PAGE_MS, easing = com.engabd.sendpin.linux.ui.Motion.Emphasized), initialScale = 0.97f))
+                                    .togetherWith(androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(com.engabd.sendpin.linux.ui.Motion.FADE_MS)))
+                            },
+                            label = "queueNow",
+                        ) { t -> NowPlayingCard(t, state) }
+                    }
                     item(key = "hdr") { SectionHeader("Up next", Modifier.padding(top = 12.dp)) }
                 }
-                itemsIndexed(queue, key = { i, t -> "$i:${t.scrobbleId ?: t.id}" }) { i, track ->
+                itemsIndexed(queue, key = { i, _ -> keys[i] }) { i, track ->
+                    Box(Modifier.animateItem(
+                        fadeInSpec = androidx.compose.animation.core.tween(com.engabd.sendpin.linux.ui.Motion.PAGE_MS),
+                        placementSpec = androidx.compose.animation.core.spring(dampingRatio = 0.85f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+                        fadeOutSpec = androidx.compose.animation.core.tween(com.engabd.sendpin.linux.ui.Motion.FADE_MS),
+                    )) {
                     QueueRow(
                         track = track,
                         position = i + 1,
@@ -210,6 +234,7 @@ fun QueuePane(modifier: Modifier, model: PanelModel) {
                             }
                         } else null,
                     )
+                    }
                 }
             }
             VerticalScrollbar(

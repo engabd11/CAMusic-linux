@@ -315,6 +315,7 @@ fun LibraryPane(modifier: Modifier, model: PanelModel, state: LibraryState = rem
     val heroOn by model.settings.homeHero.collectAsState(initial = true)
     val albumsView by model.settings.albumsView.collectAsState(initial = "grid")
     val sharedMotion by model.settings.sharedCoverMotion.collectAsState(initial = true)
+    val obscured by model.coverObscured.collectAsState()
     val startRadio: (MaItem) -> Unit = { seed -> scope.launch { model.startRadio(seed) } }
     val menus = LocalActionMenu.current
     val trackMenu: ((MaItem) -> Unit)? = if (rowMenus && menus != null) { t ->
@@ -384,13 +385,14 @@ fun LibraryPane(modifier: Modifier, model: PanelModel, state: LibraryState = rem
                     CompositionLocalProvider(LocalRouteVisibility provides this) {
                         holder.SaveableStateProvider(route.key) {
                             when (route) {
-                                LibraryRoute.Home -> HomeScreen(source, state, open, play, crates = crateMode, hero = heroOn, onRadio = startRadio)
+                                LibraryRoute.Home -> HomeScreen(source, state, open, play, crates = crateMode, hero = heroOn, onRadio = startRadio, paused = obscured)
                                 LibraryRoute.Crates -> CratesScreen(source, state, open, back)
                                 LibraryRoute.Search -> SearchScreen(source, state, open, play, back)
                                 is LibraryRoute.Browse -> BrowseScreen(
                                     route.category, source, state, now, open, play, back,
                                     albumsView = albumsView,
                                     onAlbumsView = { v -> scope.launch { model.settings.setAlbumsView(v) } },
+                                    paused = obscured,
                                 )
                                 is LibraryRoute.Album -> AlbumScreen(route.item, source, now, open, play, back)
                                 is LibraryRoute.Artist -> ArtistScreen(route.item, source, now, open, play, back)
@@ -448,6 +450,7 @@ private fun HomeScreen(
     crates: Boolean = false,
     hero: Boolean = true,
     onRadio: ((MaItem) -> Unit)? = null,
+    paused: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -491,6 +494,7 @@ private fun HomeScreen(
                 item(key = "hero") {
                     CompositionLocalProvider(LocalCoverScope provides "hero") {
                         HeroCarousel(
+                            paused = paused,
                             slides = slides,
                             onOpen = { open(LibraryRoute.Album(it)) },
                             onPlay = { a ->
@@ -741,6 +745,7 @@ private fun BrowseScreen(
     back: () -> Unit,
     albumsView: String = "grid",
     onAlbumsView: (String) -> Unit = {},
+    paused: Boolean = false,
 ) {
     var error by remember(category) { mutableStateOf<String?>(null) }
     var loadingMore by remember(category) { mutableStateOf(false) }
@@ -824,6 +829,7 @@ private fun BrowseScreen(
             category == LibraryCategory.GENRES -> GenreGrid(items) { open(LibraryRoute.Genre(it)) }
             flow -> CompositionLocalProvider(LocalCoverScope provides "flow") {
                 CoverFlow(
+                    paused = paused,
                     items = items,
                     start = state.flowIndex,
                     onSettle = { state.flowIndex = it },

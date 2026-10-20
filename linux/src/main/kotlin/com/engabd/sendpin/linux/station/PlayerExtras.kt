@@ -161,3 +161,56 @@ internal fun PlayerLyrics(model: PanelModel, track: LocalTrack?, accent: Color, 
         }
     }
 }
+
+/**
+ * The Queue page's word on the radio: a strip under the header, while one runs, saying what
+ * it started from and that it keeps the music going, with Stop. It opens and closes rather
+ * than appearing.
+ */
+@Composable
+internal fun RadioBanner(model: PanelModel, modifier: Modifier = Modifier) {
+    val radio by model.radio.collectAsState()
+    val accent = rememberAccent()
+    AnimatedVisibility(
+        visible = radio != null,
+        enter = fadeIn(tween(320)) + androidx.compose.animation.expandVertically(tween(380)),
+        exit = fadeOut(tween(200)) + androidx.compose.animation.shrinkVertically(tween(300)),
+        modifier = modifier,
+    ) {
+        val r = radio ?: return@AnimatedVisibility
+        val shape = RoundedCornerShape(18.dp)
+        val breath by rememberInfiniteTransition(label = "radioBanner").animateFloat(
+            0.35f, 1f, infiniteRepeatable(tween(1_400), RepeatMode.Reverse), label = "radioBannerDot",
+        )
+        Row(
+            Modifier
+                .clip(shape)
+                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(accent.a(0.20f), accent.a(0.06f))))
+                .border(1.dp, accent.a(0.30f), shape)
+                .padding(start = 18.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.size(9.dp).graphicsLayer { alpha = breath }.clip(RoundedCornerShape(50)).background(accent))
+            Icon(Icons.Default.Radio, null, tint = accent, modifier = Modifier.size(22.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Radio from ${r.seedName}", color = inkOn(0.95f), fontFamily = AppFont, fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text("More like it is added as the queue runs down", color = TextMuted, fontFamily = AppFont, fontSize = 13.sp, maxLines = 1)
+            }
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .clickable { model.stopRadio() }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(Icons.Default.Close, null, tint = TextMuted, modifier = Modifier.size(18.dp))
+                Text("Stop", color = TextMuted, fontFamily = AppFont, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+        }
+    }
+}

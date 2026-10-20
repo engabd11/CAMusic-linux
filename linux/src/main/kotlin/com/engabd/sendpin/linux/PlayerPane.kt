@@ -172,11 +172,13 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
 
         // Seek — the cover's wavy bar in the album's accent; scrub commits on release
         // and the poll reconciles (the bar latches the target until MPD catches up).
+        val smooth = com.engabd.sendpin.linux.station.rememberSmoothProgress(model, durMs)
         com.engabd.sendpin.ui.design.WaveSeekBar(
             value = if (durMs > 0) (posMs.toFloat() / durMs).coerceIn(0f, 1f) else 0f,
             onChange = { },
             playing = playing,
             onCommit = { f -> scope.launch { model.seekTo((f * durMs).toLong()) } },
+            valueAt = smooth,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatMs(posMs), color = TextMuted, fontSize = if (big) 24.sp else PanelMetrics.Meta, fontFamily = AppFont)
