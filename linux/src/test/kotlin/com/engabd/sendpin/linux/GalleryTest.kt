@@ -265,4 +265,16 @@ class GalleryTest {
         assertTrue(!radioNeedsMore(index = 2, queueSize = 10))
         assertTrue(!radioNeedsMore(index = -1, queueSize = 0))
     }
+
+    // ── A queue the panel did not build ──
+
+    @Test
+    fun foreignEntriesAdoptTheirLibraryIdentity() {
+        val foreign = com.engabd.sendpin.audio.LocalTrack(id = "Ali/Patterns/01.flac", title = "Pulse", scrobbleId = "Ali/Patterns/01.flac", scrobbleProvider = "mpd")
+        val ours = com.engabd.sendpin.audio.LocalTrack(id = "jf-9", title = "Other", scrobbleId = "X/02.flac", scrobbleProvider = "mpd")
+        val unknown = com.engabd.sendpin.audio.LocalTrack(id = "Z/03.flac", title = "?", scrobbleId = "Z/03.flac", scrobbleProvider = "mpd")
+        val lib = foreign.copy(id = "jf-1")
+        val out = adoptLibraryTracks(listOf(foreign, ours, unknown), mapOf("Ali/Patterns/01.flac" to lib, "X/02.flac" to ours.copy(id = "jf-other")))
+        assertEquals(listOf("jf-1", "jf-9", "Z/03.flac"), out.map { it.id })
+    }
 }

@@ -160,9 +160,11 @@ internal fun CoverFlow(
         }
     }
 
-    LaunchedEffect(centre) {
-        onSettle(centre)
-        if (onNearEnd != null && centre >= items.size - 24) onNearEnd()
+    LaunchedEffect(centre) { onSettle(centre) }
+    // Keyed on the count too: a page that lands while the flow sits at the end of what
+    // was loaded must still ask for the next one, or the flow dead-ends there.
+    LaunchedEffect(centre, items.size) {
+        if (onNearEnd != null && centre >= items.size - 40) onNearEnd()
     }
     // A gallery left alone turns by itself.
     LaunchedEffect(items.size) {

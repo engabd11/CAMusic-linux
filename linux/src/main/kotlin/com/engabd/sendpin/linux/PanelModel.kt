@@ -192,6 +192,7 @@ class PanelModel(val settings: LinuxSettings) {
             val hgTokV = settings.hueGhostToken.first()
 
             mpdAddress.value = mpdAddr
+            resolveTried.clear()
             jfUrl.value = jfUrlV
             hueGhostUrl.value = hgUrlOr(hgUrlV)
             hueGhostToken.value = hgTokV
@@ -285,6 +286,7 @@ class PanelModel(val settings: LinuxSettings) {
                 }
                 sleepTick(state.value)
                 radioTick(state.value)
+                resolveForeignQueue(state.value)
                 // Another client can change MPD's loudness under us (see [replayGain]);
                 // one extra command every 10 s keeps the readback honest without
                 // doubling the poll's traffic.
@@ -624,6 +626,54 @@ class PanelModel(val settings: LinuxSettings) {
     suspend fun playAlbum(album: MaItem, tracks: List<MaItem>, startIndex: Int = 0) =
         guarded("Play") { stopRadio(); queueAndPlay(album, tracks, startIndex) }
 
+    // ── A queue the panel did not build ─────────────────────────────────────
+
+    /** MPD paths already looked up in Jellyfin (found or not), so each is asked about once. */
+    private val resolveTried = java.util.Collections.synchronizedSet(HashSet<String>())
+    private val resolving = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Give Jellyfin identities to queue entries the panel did not queue itself: a queue
+     * MPD was already playing when the panel started (after an upgrade or a reboot), or
+     * one another MPD client built. Without them nothing was reported, so Jellyfin (and
+     * HueGhost following it) saw the panel as idle while it played: the "Patterns played
+     * but Jellyfin showed nothing" report. The playing song's album is looked up first,
+     * by album name and then by title, and an entry is only taken over where Jellyfin's
+     * file path maps to exactly the file MPD has.
+     */
+    private fun resolveForeignQueue(s: com.engabd.sendpin.audio.RemoteState?) {
+        val jf = jellyfin ?: return
+        if (resolving.get()) return
+        val q = queue.value
+        val pending = q.filter { it.id == it.scrobbleId && it.scrobbleId != null && it.scrobbleId !in resolveTried }
+        if (pending.isEmpty() || !resolving.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                val playing = s?.index?.let { q.getOrNull(it) }
+                val first = playing?.takeIf { it in pending } ?: pending.first()
+                val group = pending.filter { it.album == first.album }.take(80)
+                group.forEach { e -> e.scrobbleId?.let { resolveTried += it } }
+                val prefix = settings.jellyfinPathPrefix.first()
+                val found = runCatching { jf.tracksWithPaths(first.album, first.title) }.getOrDefault(emptyList())
+                val byPath = HashMap<String, LocalTrack>()
+                val albumOf = HashMap<String, String>()
+                for ((item, path) in found) {
+                    val mpdPath = JellyfinToMpd.toMpdPath(path, prefix) ?: continue
+                    byPath.putIfAbsent(mpdPath, JellyfinToMpd.toLocalTrack(item, mpdPath))
+                    item.parentId?.takeIf { it.isNotBlank() }?.let { albumOf[item.itemId] = it }
+                }
+                if (byPath.isEmpty()) return@launch
+                queueLock.withLock {
+                    queue.value = adoptLibraryTracks(queue.value, byPath)
+                }
+                if (albumOf.isNotEmpty()) albumIds.value = albumIds.value + albumOf
+                wake.trySend(Unit)
+            } finally {
+                resolving.set(false)
+            }
+        }
+    }
+
     // ── Radio ───────────────────────────────────────────────────────────────
 
     /**
@@ -903,3 +953,11 @@ internal fun pickLyricMatch(hits: List<MaItem>, title: String, artist: String?):
     }
     return byArtist ?: sameTitle.firstOrNull()
 }
+
+/**
+ * [queue] with every entry the panel did not build (`id == scrobbleId`) replaced by the
+ * library track for the same MPD file, where [byPath] has one. Positions never change, so
+ * the queue stays index-aligned with MPD's. Pure for the tests.
+ */
+internal fun adoptLibraryTracks(queue: List<LocalTrack>, byPath: Map<String, LocalTrack>): List<LocalTrack> =
+    queue.map { e -> if (e.id == e.scrobbleId) byPath[e.scrobbleId] ?: e else e }

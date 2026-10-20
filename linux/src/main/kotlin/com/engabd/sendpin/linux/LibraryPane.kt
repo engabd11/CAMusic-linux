@@ -793,6 +793,12 @@ private fun BrowseScreen(
     }
 
     val items = state.browse[category]
+    // Cover Flow is a walk through the whole shelf: it keeps loading in the background
+    // until every album is in, so the count is the library's and there is no end to hit.
+    val flowing = category == LibraryCategory.ALBUMS && albumsView == "flow"
+    LaunchedEffect(flowing, items?.size, loadingMore) {
+        if (flowing && items != null && !loadingMore) loadMore()
+    }
     val count = if (category == LibraryCategory.FAVORITES) null else items?.size
     val noun = when (category) {
         LibraryCategory.ALBUMS, LibraryCategory.RECENT -> "albums"

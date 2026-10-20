@@ -427,6 +427,32 @@ class JellyfinClient(
             .mapNotNull { (it as? JsonObject)?.let(::item) }
     }
 
+    /**
+     * Songs as they sit on disk: each track with its absolute file path, found by album
+     * name (every track of each matching album) or by title. For recognising a queue the
+     * panel did not build: a match is only taken where the path is the very file MPD has.
+     */
+    suspend fun tracksWithPaths(album: String?, title: String?): List<Pair<MaItem, String>> {
+        suspend fun audio(params: Map<String, String>): List<Pair<MaItem, String>> =
+            get("/Users/$userId/Items", params + mapOf(
+                "IncludeItemTypes" to "Audio", "Recursive" to "true",
+                "Fields" to "$BASE_FIELDS,MediaSources,Path", "ImageTypeLimit" to "1",
+            ))["Items"]?.jsonArray.orEmpty().mapNotNull { el ->
+                val o = el as? JsonObject ?: return@mapNotNull null
+                val path = o.str("Path") ?: return@mapNotNull null
+                item(o)?.let { it to path }
+            }
+        val out = mutableListOf<Pair<MaItem, String>>()
+        if (!album.isNullOrBlank()) {
+            val albums = get("/Users/$userId/Items", mapOf(
+                "IncludeItemTypes" to "MusicAlbum", "Recursive" to "true", "SearchTerm" to album, "Limit" to "6",
+            ))["Items"]?.jsonArray.orEmpty().mapNotNull { (it as? JsonObject)?.str("Id") }
+            for (id in albums) out += audio(mapOf("ParentId" to id))
+        }
+        if (!title.isNullOrBlank()) out += audio(mapOf("SearchTerm" to title, "Limit" to "25"))
+        return out
+    }
+
     suspend fun artists(limit: Int = 500): List<MaItem> =
         items(types = "MusicArtist", sortBy = "SortName", limit = limit)
 
