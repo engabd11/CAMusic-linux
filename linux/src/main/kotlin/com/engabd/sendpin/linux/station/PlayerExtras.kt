@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -147,15 +149,30 @@ internal fun PlayerLyrics(model: PanelModel, track: LocalTrack?, accent: Color, 
             .padding(horizontal = 28.dp),
     ) {
         LyricSheet(model, track, face, Modifier.fillMaxSize(), TextAlign.Start, sizeSp = 34f, accent = accent, karaoke = karaoke) {
+            // No words for this one (often an instrumental): the record stays on show,
+            // smaller, with a quiet line under it, rather than an empty pane.
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text("♪", color = Color.White.copy(alpha = 0.25f), fontSize = 64.sp, fontFamily = AppFont)
-                Spacer(Modifier.height(8.dp))
+                com.engabd.sendpin.linux.ui.ArtImage(
+                    url = track?.artUrl, name = track?.album ?: title,
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxSize(0.62f).aspectRatio(1f)
+                        .shadow(28.dp, RoundedCornerShape(18.dp), ambientColor = accent, spotColor = Color.Black),
+                )
+                Spacer(Modifier.height(22.dp))
                 Text(
-                    "no lyrics for this track",
-                    color = Color.White.copy(alpha = 0.4f),
+                    "No words for this one",
+                    color = Color.White.copy(alpha = 0.72f),
+                    fontFamily = AppFont,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "TAP TO SHOW THE COVER",
+                    color = Color.White.copy(alpha = 0.38f),
                     fontFamily = MonoFont,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(bottom = 8.dp),
+                    fontSize = 11.sp,
+                    letterSpacing = 1.6.sp,
                 )
             }
         }

@@ -70,7 +70,7 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
     val index = state?.index?.takeIf { it >= 0 } ?: 0
     val track = queue.getOrNull(index)
     val posMs = state?.positionMs ?: 0L
-    val durMs = state?.durationMs ?: track?.durationMs ?: 0L
+    val durMs = state?.durationMs?.takeIf { it > 0 } ?: track?.durationMs ?: 0L
     val playing = state?.playing ?: false
     val settings = model.settings
     val touch by settings.touchGestures.collectAsState(initial = false)
