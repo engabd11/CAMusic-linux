@@ -82,7 +82,8 @@ class HueGhostClient(
         intensity: String? = null,
         offsetS: Double? = null,
         enabled: Boolean? = null,
-    ): Boolean = post(url("/set"), setBody(mode, intensity, offsetS, enabled))
+        musicOffsetS: Double? = null,
+    ): Boolean = post(url("/set"), setBody(mode, intensity, offsetS, enabled, musicOffsetS))
 
     // The path keeps its slash: without it this sent `/apioff`, which HueGhost answers
     // with "unknown path", and Start and Stop silently did nothing.
@@ -104,6 +105,8 @@ class HueGhostClient(
         val running: Boolean,
         /** Sync is switched on, whether or not it is moving this second; null on a HueGhost too old to say. */
         val enabled: Boolean? = null,
+        /** The lights follow music and HueGhost times music separately: Timing sets `music_offset_s`. */
+        val musicTiming: Boolean = false,
         val mode: String?,
         val intensity: String?,
         /** The follow target's item, when a session is being tracked. */
@@ -128,6 +131,7 @@ class HueGhostClient(
             intensity: String? = null,
             offsetS: Double? = null,
             enabled: Boolean? = null,
+            musicOffsetS: Double? = null,
         ): String = buildString {
             append("{")
             var first = true
@@ -140,6 +144,7 @@ class HueGhostClient(
             intensity?.let { field("\"intensity\":\"$it\"") }
             offsetS?.let { field("\"offset_s\":$it") }
             enabled?.let { field("\"enabled\":$it") }
+            musicOffsetS?.let { field("\"music_offset_s\":$it") }
             append("}")
         }
 
@@ -161,6 +166,9 @@ class HueGhostClient(
                     enabled = root["enabled"]?.jsonPrimitive?.booleanOrNull,
                     mode = s("mode"),
                     intensity = s("intensity"),
+                    // HueGhost 2.10+ keeps a timing of its own for music (`music.offset_s`),
+                    // used instead of `offset_s` whenever the lights follow music.
+                    musicTiming = s("mode") == "music" && root["music"] is kotlinx.serialization.json.JsonObject,
                     followItem = root["follow"]?.jsonObject?.get("item")
                         ?.jsonPrimitive?.contentOrNull,
                     offsetS = root["offset_s"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),

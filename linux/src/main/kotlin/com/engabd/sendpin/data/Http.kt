@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 object Http {
 
     /** What this build calls itself to a server — desktop's answer to the app's. */
-    const val USER_AGENT: String = "CAMusic-Linux/1.3.7 (desktop)"
+    const val USER_AGENT: String = "CAMusic-Linux/1.3.8 (desktop)"
 
     /** Disk budget for cached API responses. Small: this caches JSON, not media. */
     private const val CACHE_BYTES = 16L * 1024 * 1024

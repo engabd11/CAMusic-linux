@@ -73,4 +73,12 @@ class HueGhostClientTest {
         kotlin.test.assertEquals("http://hg.lan:8787/api/off", c.url("/off"))
         kotlin.test.assertEquals("http://hg.lan:8787/api/on", c.url("/on"))
     }
+
+    @Test
+    fun musicTimingSetsTheMusicOffset() {
+        val st = HueGhostClient.parseStatus("""{"enabled": true, "state": "syncing", "mode": "music", "offset_s": 0.1, "music": {"offset_s": 0.1}}""")!!
+        kotlin.test.assertEquals(true, st.musicTiming)
+        kotlin.test.assertEquals("{\"music_offset_s\":0.25}", HueGhostClient.setBody(musicOffsetS = 0.25))
+        kotlin.test.assertEquals(false, HueGhostClient.parseStatus("""{"mode": "video", "music": {}}""")!!.musicTiming)
+    }
 }
