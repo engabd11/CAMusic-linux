@@ -153,6 +153,8 @@ private fun renderAll(args: Array<String>) {
     portrait("02-library-home", PanelTab.LIBRARY)
     portrait("03-album", PanelTab.LIBRARY, stack = listOf(LibraryRoute.Home, LibraryRoute.Album(album)))
     portrait("04-artist", PanelTab.LIBRARY, stack = listOf(LibraryRoute.Home, LibraryRoute.Artist(artist)))
+    portrait("03b-album-full", PanelTab.LIBRARY, stack = listOf(LibraryRoute.Home, LibraryRoute.Album(album)), height = 2900)
+    portrait("04b-artist-full", PanelTab.LIBRARY, stack = listOf(LibraryRoute.Home, LibraryRoute.Artist(artist)), height = 3000)
     portrait("05-favourites", PanelTab.LIBRARY, stack = listOf(LibraryRoute.Home, LibraryRoute.Browse(LibraryCategory.FAVORITES)))
     portrait("06-albums", PanelTab.LIBRARY, stack = listOf(LibraryRoute.Home, LibraryRoute.Browse(LibraryCategory.ALBUMS)))
     portrait("07-artists", PanelTab.LIBRARY, stack = listOf(LibraryRoute.Home, LibraryRoute.Browse(LibraryCategory.ARTISTS)))
@@ -590,6 +592,7 @@ private class FakeLibrary(base: String) : MusicSource {
             if (i % 11 == 7) null else "$base/art/album-$i.png",
             null, favorite = i % 4 == 1, year = 1998 + (i * 7) % 27,
             genres = listOf(GENRES[(i * 5) % GENRES.size]),
+            artistId = "ar${i % ARTISTS.size}",
         )
     }
     val playlists: List<MaItem> = listOf("Sunday Morning", "Late Night Drive", "Kitchen Dancing", "Deep Focus", "Dinner Party").mapIndexed { i, n ->
@@ -651,6 +654,21 @@ private class FakeLibrary(base: String) : MusicSource {
         )
     }
     override suspend fun lyrics(songId: String): MaLyrics? = MaLyrics(SAMPLE_LRC, synced = true)
+    override suspend fun itemExtras(id: String) = com.engabd.sendpin.library.ItemExtras(
+        overview = if (id.startsWith("ar")) {
+            "Formed in a seaside town with one borrowed synthesiser, they spent a decade playing small rooms before a late-night radio session carried them out of it. " +
+                "Their records are built slowly, layer on layer, and finished in a single take. The live shows are long, quiet and loud by turns."
+        } else {
+            "Recorded over one winter in a converted boathouse, with the tape machines running through the night. " +
+                "The songs grew out of long improvisations, cut down to their bones and dressed again with strings and field recordings from the shore."
+        },
+        label = "Harbour Light Records",
+        released = "2019-11-08",
+        rating = 8.4,
+        backdropUrl = if (id.startsWith("ar")) "$serverUrl/art/backdrop-$id.png" else null,
+    )
+    override suspend fun similarItems(id: String, count: Int) =
+        (if (id.startsWith("ar")) artists else albums).filter { it.itemId != id }.shuffled(Random(id.hashCode())).take(count)
     override fun downloadUrl(id: String) = ""
     override fun streamUrl(id: String, format: String) = ""
     override fun coverUrl(id: String?, size: Int): String? = null

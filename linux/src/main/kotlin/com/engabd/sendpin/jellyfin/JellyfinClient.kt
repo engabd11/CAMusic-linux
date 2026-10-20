@@ -530,6 +530,48 @@ class JellyfinClient(
 
     suspend fun albumDetail(id: String): Pair<MaItem?, List<MaItem>> = item(id) to albumTracks(id)
 
+    /** The page details for an album or an artist: notes, label, release date, backdrop, logo. */
+    suspend fun itemExtras(id: String): com.engabd.sendpin.library.ItemExtras? = try {
+        val o = get("/Users/$userId/Items/$id")
+        if (o.isEmpty()) null else extrasOf(id, o)
+    } catch (_: JellyfinException) {
+        null
+    }
+
+    internal fun extrasOf(id: String, o: JsonObject): com.engabd.sendpin.library.ItemExtras {
+        fun names(k: String) = (o[k] as? JsonArray).orEmpty().mapNotNull {
+            (it as? JsonObject)?.str("Name") ?: (it as? JsonPrimitive)?.contentOrNull
+        }.filter { it.isNotBlank() }
+        val image = { type: String, w: Int ->
+            url("/Items/$id/Images/$type" + if (type == "Backdrop") "/0" else "", buildMap {
+                put("maxWidth", w.toString())
+                if (token.isNotBlank()) put("api_key", token)
+            })
+        }
+        val backdrop = (o["BackdropImageTags"] as? JsonArray)?.isNotEmpty() == true
+        val logo = (o["ImageTags"] as? JsonObject)?.get("Logo") != null
+        val ids = o["ProviderIds"] as? JsonObject
+        return com.engabd.sendpin.library.ItemExtras(
+            overview = o.str("Overview")?.let(::plainText),
+            label = names("Studios").firstOrNull(),
+            genres = names("Genres"),
+            released = o.str("PremiereDate")?.take(10),
+            backdropUrl = if (backdrop) image("Backdrop", 1600) else null,
+            logoUrl = if (logo) image("Logo", 800) else null,
+            tags = names("Tags"),
+            musicBrainzId = ids?.str("MusicBrainzAlbum") ?: ids?.str("MusicBrainzArtist"),
+            rating = o["CommunityRating"]?.jsonPrimitive?.doubleOrNull,
+        )
+    }
+
+    /** Jellyfin's own "more like this": related albums for an album, similar artists for an artist. */
+    suspend fun similarItems(id: String, count: Int = 12): List<MaItem> = try {
+        val params = mapOf("UserId" to userId, "Limit" to count.toString(), "Fields" to BASE_FIELDS)
+        get("/Items/$id/Similar", params)["Items"]?.jsonArray.orEmpty().mapNotNull { (it as? JsonObject)?.let(::item) }
+    } catch (_: JellyfinException) {
+        emptyList()
+    }
+
     suspend fun artistDetail(id: String): Pair<MaItem?, List<MaItem>> = item(id) to artistAlbums(id)
 
     /**
@@ -771,9 +813,13 @@ class JellyfinClient(
         val seconds = o.long("RunTimeTicks")?.let { (it / 10_000_000).toInt() }?.takeIf { it > 0 }
         val artistName = o.str("AlbumArtist")
             ?: o["Artists"]?.jsonArray.orEmpty().firstOrNull()?.jsonPrimitive?.contentOrNull
+        val artistId = listOf("AlbumArtists", "ArtistItems").firstNotNullOfOrNull { k ->
+            (o[k] as? JsonArray)?.firstOrNull()?.let { (it as? JsonObject)?.str("Id") }
+        }
         return MaItem(
             itemId = id,
             provider = PROVIDER,
+            artistId = artistId,
             name = o.str("Name") ?: "Unknown",
             uri = id,
             mediaType = mediaType,
@@ -926,3 +972,12 @@ internal fun jellyfinLineBody(text: String, cues: List<JellyfinCue>): String {
     valid.last().endMs?.let { sb.append(lrcStamp('<', it, '>')) }
     return sb.toString()
 }
+
+/** Jellyfin overviews can carry HTML (`<br>`, `<p>`, links); the page shows plain paragraphs. */
+internal fun plainText(html: String): String =
+    html.replace(Regex("""(?i)<br\s*/?>|</p>"""), "\n")
+        .replace(Regex("<[^>]+>"), "")
+        .replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ")
+        .lines().joinToString("\n") { it.trim() }
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()

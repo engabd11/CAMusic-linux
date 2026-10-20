@@ -38,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -215,7 +214,7 @@ internal fun KaraokeSheet(
                 ) {
                     when {
                         line.text.isBlank() -> Text("♪", style = style, color = Color.White.copy(alpha = 0.7f))
-                        live -> WordFillText(line, head, style, Color.White.copy(alpha = UNSUNG_ALPHA), fill, glowColour = accent)
+                        live -> WordFillText(line, head, style, Color.White.copy(alpha = UNSUNG_ALPHA), fill)
                         else -> Text(line.text, style = style, color = if (isActive) fill else Color.White)
                     }
                 }
@@ -238,6 +237,8 @@ internal fun LyricStrip(
     accent: Color,
     karaoke: Boolean,
     modifier: Modifier = Modifier,
+    /** 2: the line and the next. 4 and more: the line before too, then the line and the ones after. */
+    rows: Int = 2,
 ) {
     val key = track?.scrobbleId ?: track?.id
     val lyrics by produceState<MaLyrics?>(null, key) {
@@ -253,7 +254,11 @@ internal fun LyricStrip(
     val horizontal = if (align == TextAlign.Center) Alignment.CenterHorizontally else Alignment.Start
 
     // A fixed height, so the words arriving or leaving never move the record above them.
-    Box(modifier.fillMaxWidth().height(with(LocalDensity.current) { (style.lineHeight * 2.2f).toDp() } + 12.dp)) {
+    val small = 0.72f
+    val withPrev = rows >= 4
+    val after = (rows - 1 - (if (withPrev) 1 else 0)).coerceAtLeast(0)
+    val extra = after + (if (withPrev) 1 else 0)
+    Box(modifier.fillMaxWidth().height(with(LocalDensity.current) { (style.lineHeight * (1.25f + small * 1.1f * extra)).toDp() } + (8 * extra).dp)) {
         if (lines.isEmpty()) return@Box
         AnimatedContent(
             targetState = active,
@@ -266,20 +271,28 @@ internal fun LyricStrip(
         ) { at ->
             Column(Modifier.fillMaxWidth(), horizontalAlignment = horizontal) {
                 val line = lines.getOrNull(at)
-                val next = lines.drop(at + 1).firstOrNull { it.text.isNotBlank() }
+                val smallStyle = style.copy(fontSize = style.fontSize * small, lineHeight = style.lineHeight * small)
+                if (withPrev) {
+                    // The line just sung, fading out above.
+                    Text(
+                        lines.take(at.coerceAtLeast(0)).lastOrNull { it.text.isNotBlank() }?.text ?: "",
+                        style = smallStyle, color = Color.White.copy(alpha = 0.24f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    )
+                }
                 when {
                     line == null || line.text.isBlank() -> Text("♪", style = style, color = Color.White.copy(alpha = 0.4f))
-                    line.words != null -> WordFillText(line, head, style, Color.White.copy(alpha = UNSUNG_ALPHA), fill, maxLines = 2, glowColour = accent)
+                    line.words != null -> WordFillText(line, head, style, Color.White.copy(alpha = UNSUNG_ALPHA), fill, maxLines = 2)
                     else -> Text(line.text, style = style, color = fill, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                if (next != null) {
+                lines.drop(at + 1).filter { it.text.isNotBlank() }.take(after).forEachIndexed { k, next ->
                     Text(
                         next.text,
-                        style = style.copy(fontSize = style.fontSize * 0.72f, lineHeight = style.lineHeight * 0.72f),
-                        color = Color.White.copy(alpha = 0.36f),
+                        style = smallStyle,
+                        color = Color.White.copy(alpha = 0.40f - 0.10f * k),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     )
                 }
             }
@@ -301,12 +314,9 @@ internal fun WordFillText(
     fill: Color,
     maxLines: Int = Int.MAX_VALUE,
     modifier: Modifier = Modifier,
-    glowColour: Color = fill,
 ) {
     var layout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
     val estimated = line.words?.firstOrNull()?.estimated == true
-    // A soft light under the sung words in the album's colour, so the wipe reads from across the room.
-    val glow = remember(glowColour) { Shadow(glowColour.copy(alpha = 0.75f), blurRadius = 22f) }
     Text(
         line.text,
         style = style,
@@ -319,13 +329,13 @@ internal fun WordFillText(
             val l = layout ?: return@drawWithContent
             val feather = (if (estimated) 30 else 16).dp.toPx()
             val colour = if (estimated) fill.copy(alpha = fill.alpha * 0.94f) else fill
-            drawSungFill(l, LyricTiming.sungChars(line, head()), colour, feather, glow)
+            drawSungFill(l, LyricTiming.sungChars(line, head()), colour, feather)
         },
     )
 }
 
 /** Paint [layout] in [colour] up to the fractional character index [sung]. */
-private fun DrawScope.drawSungFill(layout: TextLayoutResult, sung: Float, colour: Color, feather: Float, glow: Shadow) {
+private fun DrawScope.drawSungFill(layout: TextLayoutResult, sung: Float, colour: Color, feather: Float) {
     val total = layout.layoutInput.text.length
     if (sung <= 0f || total == 0) return
     val pos = sung.coerceAtMost(total.toFloat())
@@ -338,7 +348,7 @@ private fun DrawScope.drawSungFill(layout: TextLayoutResult, sung: Float, colour
         val top = layout.getLineTop(row)
         val bottom = layout.getLineBottom(row)
         if (pos >= end) {
-            clipRect(left, top, right, bottom) { drawText(layout, brush = SolidColor(colour), shadow = glow) }
+            clipRect(left, top, right, bottom) { drawText(layout, brush = SolidColor(colour)) }
             continue
         }
         val ci = pos.toInt().coerceIn(start, (end - 1).coerceAtLeast(start))
@@ -352,14 +362,14 @@ private fun DrawScope.drawSungFill(layout: TextLayoutResult, sung: Float, colour
                 0f to Color.Transparent, ((edge - far) / (right - far)).coerceIn(0f, 1f) to colour, 1f to colour,
                 startX = far, endX = right,
             )
-            clipRect(far, top, right, bottom) { drawText(layout, brush = brush, shadow = glow) }
+            clipRect(far, top, right, bottom) { drawText(layout, brush = brush) }
         } else {
             val far = (edge + feather).coerceAtMost(right)
             val brush = Brush.horizontalGradient(
                 0f to colour, ((edge - left) / (far - left)).coerceIn(0f, 1f) to colour, 1f to Color.Transparent,
                 startX = left, endX = far,
             )
-            clipRect(left, top, far, bottom) { drawText(layout, brush = brush, shadow = glow) }
+            clipRect(left, top, far, bottom) { drawText(layout, brush = brush) }
         }
     }
 }

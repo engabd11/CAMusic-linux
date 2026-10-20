@@ -239,6 +239,10 @@ interface MusicSource {
     suspend fun lyrics(songId: String): MaLyrics? = null
     suspend fun artistInfo(id: String, similarCount: Int = 0): ArtistInfo = ArtistInfo()
     suspend fun albumInfo(id: String): AlbumInfo = AlbumInfo()
+    /** A record's or an artist's page details: notes, label, backdrop. Null where there are none. */
+    suspend fun itemExtras(id: String): ItemExtras? = null
+    /** Items like [id], of the same kind: related albums for an album, similar artists for an artist. */
+    suspend fun similarItems(id: String, count: Int = 12): List<MaItem> = emptyList()
     suspend fun topSongs(artistName: String, count: Int = 10): List<MaItem> = emptyList()
     suspend fun similarSongs(id: String, count: Int = 50): List<MaItem> = emptyList()
 

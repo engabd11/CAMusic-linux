@@ -179,13 +179,13 @@ internal fun CoverFlow(
                     onDragStart = { tracker.resetTracking(); touchedAt = System.currentTimeMillis(); scope.launch { position.stop() } },
                     onDragEnd = {
                         val v = tracker.calculateVelocity().x
-                        val coverPx = size.width * 0.4f * 0.66f
+                        val coverPx = size.width * (if (size.height > size.width) 0.52f else 0.4f) * 0.66f
                         settleOn(flowTarget(position.value, -v / coverPx, items.size))
                     },
                     onDragCancel = { settleOn(centre) },
                 ) { change, dx ->
                     tracker.addPosition(change.uptimeMillis, change.position)
-                    val coverPx = size.width * 0.4f * 0.66f
+                    val coverPx = size.width * (if (size.height > size.width) 0.52f else 0.4f) * 0.66f
                     val next = (position.value - dx / coverPx).coerceIn(-0.4f, items.size - 0.6f)
                     scope.launch { position.snapTo(next) }
                 }
@@ -206,7 +206,8 @@ internal fun CoverFlow(
                 }
             },
     ) {
-        val cover: Dp = minOf(maxWidth * 0.40f, maxHeight * 0.52f)
+        // Larger in portrait, where the panel has height to spare under the stage.
+        val cover: Dp = if (maxHeight > maxWidth) minOf(maxWidth * 0.52f, maxHeight * 0.5f) else minOf(maxWidth * 0.40f, maxHeight * 0.52f)
         val coverPx = with(LocalDensity.current) { cover.toPx() }
         val stageTop = (maxHeight - cover) * 0.32f
 
@@ -334,10 +335,12 @@ internal data class HeroSlide(val item: MaItem, val why: String)
 /** The carousel's pages: the newest records first, then a few to rediscover, no album twice. */
 internal fun heroSlides(home: HomeShelves, max: Int = 8): List<HeroSlide> {
     val out = LinkedHashMap<String, HeroSlide>()
-    home.recentlyPlayed.firstOrNull()?.let { out[it.itemId] = HeroSlide(it, "Jump back in") }
-    home.recentlyAdded.take(4).forEach { out.putIfAbsent(it.itemId, HeroSlide(it, "New in your library")) }
-    home.rediscover.forEach { if (out.size < max) out.putIfAbsent(it.itemId, HeroSlide(it, "Rediscover")) }
-    home.favoriteAlbums.shuffled().forEach { if (out.size < max) out.putIfAbsent(it.itemId, HeroSlide(it, "A favourite")) }
+    // A slide is a picture first: a record with no cover has no place in it.
+    fun ok(a: MaItem) = !a.image.isNullOrBlank()
+    home.recentlyPlayed.firstOrNull(::ok)?.let { out[it.itemId] = HeroSlide(it, "Jump back in") }
+    home.recentlyAdded.filter(::ok).take(4).forEach { out.putIfAbsent(it.itemId, HeroSlide(it, "New in your library")) }
+    home.rediscover.filter(::ok).forEach { if (out.size < max) out.putIfAbsent(it.itemId, HeroSlide(it, "Rediscover")) }
+    home.favoriteAlbums.filter(::ok).shuffled().forEach { if (out.size < max) out.putIfAbsent(it.itemId, HeroSlide(it, "A favourite")) }
     return out.values.take(max)
 }
 

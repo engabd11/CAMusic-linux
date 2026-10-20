@@ -156,6 +156,8 @@ data class MaItem(
      * even when MA had the text sitting right there.
      */
     val description: String? = null,
+    /** The album's (or track's) artist in the library, for linking to their page. */
+    val artistId: String? = null,
     /**
      * The container this item sits in — a track's album id, an album's artist id.
      * Subsonic gives these directly; MA addresses items by uri instead and leaves

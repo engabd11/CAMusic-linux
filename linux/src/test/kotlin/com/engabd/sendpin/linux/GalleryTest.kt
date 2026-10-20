@@ -166,12 +166,42 @@ class GalleryTest {
 
     @Test
     fun heroSlidesHaveNoAlbumTwice() {
-        val a = item("a", type = "album")
-        val b = item("b", type = "album")
-        val c = item("c", type = "album")
-        val slides = heroSlides(HomeShelves(recentlyPlayed = listOf(a), recentlyAdded = listOf(a, b), rediscover = listOf(b, c)))
+        val a = item("a", type = "album").copy(image = "http://x/a")
+        val b = item("b", type = "album").copy(image = "http://x/b")
+        val c = item("c", type = "album").copy(image = "http://x/c")
+        val bare = item("bare", type = "album")
+        val slides = heroSlides(HomeShelves(recentlyPlayed = listOf(a), recentlyAdded = listOf(a, b, bare), rediscover = listOf(b, c)))
         assertEquals(listOf("a", "b", "c"), slides.map { it.item.itemId })
         assertEquals("Jump back in", slides.first().why)
+    }
+
+    // ── Album and artist pages ──
+
+    @Test
+    fun albumFactsReadLikeASleeve() {
+        val tracks = listOf(item("1").copy(duration = 120, discNumber = 1), item("2").copy(duration = 180, discNumber = 2))
+        val facts = albumFactRows(2014, "2014-03-21", "Ninja Tune", listOf("Electronic"), tracks, 7.25).toMap()
+        assertEquals("21 March 2014", facts["Released"])
+        assertEquals("Ninja Tune", facts["Label"])
+        assertEquals("2", facts["Tracks"])
+        assertEquals("2", facts["Discs"])
+        assertEquals("7.3 / 10", facts["Rating"])
+        assertEquals("2014", albumFactRows(2014, null, null, emptyList(), emptyList(), null).toMap()["Year"])
+    }
+
+    @Test
+    fun artistFactsAndLatest() {
+        val albums = listOf(
+            item("x", type = "album").copy(year = 1999, genres = listOf("Jazz")),
+            item("y", type = "album").copy(year = 2021, genres = listOf("Jazz")),
+        )
+        assertEquals("2 albums  ·  1999–2021  ·  Jazz", artistFacts(albums, emptyList()))
+        assertEquals("y", latestOf(albums)?.itemId)
+    }
+
+    @Test
+    fun overviewsLoseTheirHtml() {
+        assertEquals("One & two\nthree", com.engabd.sendpin.jellyfin.plainText("<p>One &amp; two<br/>three</p>"))
     }
 
     // ── Shared covers and art sizes ──

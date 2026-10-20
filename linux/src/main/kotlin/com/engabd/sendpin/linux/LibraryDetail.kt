@@ -38,6 +38,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Text
+import com.engabd.sendpin.library.ItemExtras
+import com.engabd.sendpin.linux.ui.LocalCoverScope
+import com.engabd.sendpin.linux.ui.Shelf
+import com.engabd.sendpin.ui.design.LocalPalette
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.animation.core.tween
 import com.engabd.sendpin.linux.ui.LocalSharedCovers
@@ -158,6 +163,10 @@ internal fun AlbumScreen(
     var tracks by remember(album.itemId) { mutableStateOf<List<MaItem>?>(null) }
     var error by remember(album.itemId) { mutableStateOf<String?>(null) }
 
+    var extras by remember(album.itemId) { mutableStateOf<ItemExtras?>(null) }
+    var moreBy by remember(album.itemId) { mutableStateOf<List<MaItem>>(emptyList()) }
+    var related by remember(album.itemId) { mutableStateOf<List<MaItem>>(emptyList()) }
+
     LaunchedEffect(album.itemId) {
         try {
             val (full, t) = source.albumDetail(album.itemId)
@@ -165,6 +174,16 @@ internal fun AlbumScreen(
             tracks = t
         } catch (e: Exception) {
             error = e.message ?: "Album failed to load"
+        }
+        // The page's second wave, each on its own so a slow one holds up nothing.
+        coroutineScope {
+            launch { extras = runCatching { source.itemExtras(album.itemId) }.getOrNull() }
+            launch { related = runCatching { source.similarItems(album.itemId, 12) }.getOrDefault(emptyList()) }
+            launch {
+                val artistId = header.artistId ?: return@launch
+                moreBy = runCatching { source.artistDetail(artistId).second }.getOrDefault(emptyList())
+                    .filter { it.itemId != album.itemId }
+            }
         }
     }
 
@@ -179,6 +198,10 @@ internal fun AlbumScreen(
             source = source,
             play = play,
             back = back,
+            extras = extras,
+            moreBy = moreBy,
+            related = related,
+            open = open,
         )
     }
 }
@@ -229,8 +252,16 @@ private fun DetailPage(
     play: (MaItem, List<MaItem>, Int) -> Unit,
     back: () -> Unit,
     glyph: ImageVector = Icons.Default.MusicNote,
+    extras: ItemExtras? = null,
+    moreBy: List<MaItem> = emptyList(),
+    related: List<MaItem> = emptyList(),
+    open: ((LibraryRoute) -> Unit)? = null,
 ) {
     val listState = rememberLazyListState()
+    val palette = LocalPalette.current
+    val isAlbum = header.mediaType == "album"
+    // This record is the one playing: its disc turns.
+    val spinning = now.playing && now.id != null && tracks.orEmpty().any { it.itemId == now.id }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
@@ -249,6 +280,20 @@ private fun DetailPage(
                     favourite = source?.takeIf { it.has(Capability.FAVORITES) },
                     onRadio = LocalStartRadio.current?.takeIf { source != null && header.mediaType == "album" }?.let { r -> { r(header) } },
                     scrolled = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else 2_000f },
+                    sleeve = isAlbum,
+                    spinning = spinning,
+                    onArtist = header.artistId?.takeIf { open != null }?.let { id ->
+                        {
+                            open?.invoke(
+                                LibraryRoute.Artist(
+                                    MaItem(
+                                        itemId = id, provider = header.provider, name = header.subtitle.orEmpty(),
+                                        uri = id, mediaType = "artist", subtitle = null, image = null, duration = null,
+                                    ),
+                                ),
+                            )
+                        }
+                    },
                 )
             }
             when {
@@ -286,11 +331,38 @@ private fun DetailPage(
                     }
                 }
             }
+            if (isAlbum && error == null) albumShelves(header, tracks, extras, moreBy, related, palette.accent, open)
         }
         VerticalScrollbar(
             rememberScrollbarAdapter(listState),
             modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
         )
+    }
+}
+
+/** The shelves under a record's tracks: about it, more by its artist, and what is near it. */
+private fun androidx.compose.foundation.lazy.LazyListScope.albumShelves(
+    header: MaItem,
+    tracks: List<MaItem>?,
+    extras: ItemExtras?,
+    moreBy: List<MaItem>,
+    related: List<MaItem>,
+    accent: Color,
+    open: ((LibraryRoute) -> Unit)?,
+) {
+    val facts = albumFactRows(header.year, extras?.released, extras?.label, extras?.genres?.ifEmpty { null } ?: header.genres, tracks.orEmpty(), extras?.rating)
+    if (!extras?.overview.isNullOrBlank() || facts.isNotEmpty()) {
+        item(key = "about") { Box(Modifier.padding(top = 24.dp)) { AboutCard("About this album", extras?.overview, facts, accent) } }
+    }
+    if (open != null && moreBy.isNotEmpty()) item(key = "moreBy") {
+        CompositionLocalProvider(LocalCoverScope provides "moreBy") {
+            Shelf("More by ${header.subtitle ?: "this artist"}", moreBy, { open(LibraryRoute.Album(it)) }, Modifier.padding(top = 20.dp))
+        }
+    }
+    if (open != null && related.isNotEmpty()) item(key = "related") {
+        CompositionLocalProvider(LocalCoverScope provides "related") {
+            Shelf("You might also like", related, { open(LibraryRoute.Album(it)) }, Modifier.padding(top = 20.dp))
+        }
     }
 }
 
@@ -313,6 +385,10 @@ private fun DetailHero(
     onRadio: (() -> Unit)? = null,
     /** How far the page has scrolled past the hero's top, for the backdrop's parallax. */
     scrolled: () -> Float = { 0f },
+    /** An album: the cover as a sleeve with its record slid out. */
+    sleeve: Boolean = false,
+    spinning: Boolean = false,
+    onArtist: (() -> Unit)? = null,
 ) {
     val accent = rememberAccent()
     val scope = rememberCoroutineScope()
@@ -329,7 +405,10 @@ private fun DetailHero(
                 horizontalArrangement = Arrangement.spacedBy(28.dp),
             ) {
                 val shape = if (circular) CircleShape else PanelShapes.Tile
-                ArtImage(
+                if (sleeve) RecordSleeve(
+                    image = item.image, name = item.name, palette = LocalPalette.current, spinning = spinning,
+                    cover = 250.dp, sharedKey = covers?.keyFor(item.itemId),
+                ) else ArtImage(
                     url = item.image,
                     name = item.name,
                     shape = shape,
@@ -355,11 +434,18 @@ private fun DetailHero(
                         overflow = TextOverflow.Ellipsis,
                     )
                     item.subtitle?.takeIf { it.isNotBlank() }?.let {
-                        Text(it, color = TextSecondary, fontFamily = AppFont, fontWeight = FontWeight.Medium, fontSize = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            it,
+                            color = if (onArtist != null) accent else TextSecondary,
+                            fontFamily = AppFont, fontWeight = if (onArtist != null) FontWeight.Bold else FontWeight.Medium,
+                            fontSize = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = if (onArtist != null) Modifier.clickable(onClick = onArtist) else Modifier,
+                        )
                     }
                     if (facts.isNotBlank()) {
-                        Text(facts, color = TextMuted, fontFamily = AppFont, fontSize = 15.sp, maxLines = 1)
+                        Text(facts, color = TextMuted, fontFamily = AppFont, fontSize = 15.sp, maxLines = 2)
                     }
+                    if (sleeve) PaletteDots(LocalPalette.current, Modifier.padding(top = 4.dp))
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         PillButton(
@@ -451,17 +537,23 @@ internal fun ArtistScreen(
     var albums by remember(artist.itemId) { mutableStateOf<List<MaItem>?>(null) }
     var popular by remember(artist.itemId) { mutableStateOf<List<MaItem>>(emptyList()) }
     var error by remember(artist.itemId) { mutableStateOf<String?>(null) }
+    var extras by remember(artist.itemId) { mutableStateOf<ItemExtras?>(null) }
+    var similar by remember(artist.itemId) { mutableStateOf<List<MaItem>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(artist.itemId) {
-        try {
-            val (full, a) = source.artistDetail(artist.itemId)
-            if (full != null) header = full
-            albums = a
-        } catch (e: Exception) {
-            error = e.message ?: "Artist failed to load"
+        coroutineScope {
+            launch { extras = runCatching { source.itemExtras(artist.itemId) }.getOrNull() }
+            launch { similar = runCatching { source.similarItems(artist.itemId, 14) }.getOrDefault(emptyList()) }
+            try {
+                val (full, a) = source.artistDetail(artist.itemId)
+                if (full != null) header = full
+                albums = a
+            } catch (e: Exception) {
+                error = e.message ?: "Artist failed to load"
+            }
+            popular = runCatching { source.topSongs(header.name, 5) }.getOrDefault(emptyList())
         }
-        popular = runCatching { source.topSongs(artist.name, 5) }.getOrDefault(emptyList())
     }
 
     // "Play" on an artist is every song under them, in album order; "Shuffle" the same, mixed.
@@ -482,12 +574,32 @@ internal fun ArtistScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
                 modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
             ) {
-                fullSpan("hero") {
+                val backdrop = extras?.backdropUrl
+                val scrolled = { if (gridState.firstVisibleItemIndex == 0) gridState.firstVisibleItemScrollOffset.toFloat() else 2_000f }
+                if (backdrop != null) fullSpan("backdrop") {
+                    Box {
+                        ArtistBackdrop(backdrop, extras?.logoUrl, header.name, artistFacts(albums.orEmpty(), extras?.genres.orEmpty()), scrolled)
+                        Row(Modifier.padding(start = PageGutter, top = 20.dp)) {
+                            CircleButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onClick = back)
+                        }
+                    }
+                }
+                if (backdrop != null) fullSpan("actions") {
+                    Row(
+                        Modifier.padding(horizontal = PageGutter, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PillButton("Play", icon = Icons.Default.PlayArrow, onClick = { playAll(shuffle = false) })
+                        CircleButton(Icons.Default.Shuffle, "Shuffle", onClick = { playAll(shuffle = true) })
+                        LocalStartRadio.current?.let { r -> CircleButton(Icons.Default.Radio, "Start radio", onClick = { r(header) }) }
+                    }
+                } else fullSpan("hero") {
                     val count = albums?.size
                     DetailHero(
                         item = header.copy(subtitle = null),
                         eyebrow = "Artist",
-                        facts = count?.let { if (it == 1) "1 album" else "$it albums" } ?: "",
+                        facts = albums?.let { artistFacts(it, extras?.genres.orEmpty()) } ?: (count?.let { if (it == 1) "1 album" else "$it albums" } ?: ""),
                         back = back,
                         glyph = Icons.Default.Person,
                         onPlay = { playAll(shuffle = false) },
@@ -496,8 +608,11 @@ internal fun ArtistScreen(
                         coverSize = 260.dp,
                         circular = true,
                         onRadio = LocalStartRadio.current?.let { r -> { r(header) } },
-                        scrolled = { if (gridState.firstVisibleItemIndex == 0) gridState.firstVisibleItemScrollOffset.toFloat() else 2_000f },
+                        scrolled = scrolled,
                     )
+                }
+                albums?.let(::latestOf)?.takeIf { (albums?.size ?: 0) > 1 }?.let { latest ->
+                    fullSpan("latest") { LatestReleaseCard(latest) { open(LibraryRoute.Album(latest)) } }
                 }
                 if (popular.isNotEmpty()) {
                     fullSpan("popularHdr") { SectionHeader("Popular") }
@@ -514,8 +629,17 @@ internal fun ArtistScreen(
                     error != null -> fullSpan("error") { EmptyState(Icons.Default.ErrorOutline, "Couldn't load this artist", error!!) }
                     a == null -> fullSpan("loading") { TrackSkeleton() }
                     a.isNotEmpty() -> {
+                        if (a.size > 2) fullSpan("timeline") { TimelineShelf(a, LocalPalette.current.accent) { open(LibraryRoute.Album(it)) } }
                         fullSpan("albumsHdr") { SectionHeader("Albums") }
                         tileRows("albums", a) { open(LibraryRoute.Album(it)) }
+                    }
+                }
+                extras?.overview?.takeIf { it.isNotBlank() }?.let { bio ->
+                    fullSpan("bio") { AboutCard("About ${header.name}", bio, emptyList(), LocalPalette.current.accent) }
+                }
+                if (similar.isNotEmpty()) fullSpan("similar") {
+                    CompositionLocalProvider(LocalCoverScope provides "similar") {
+                        Shelf("Similar artists", similar, { open(LibraryRoute.Artist(it)) }, Modifier.padding(top = 12.dp), circular = true, tileWidth = 150.dp)
                     }
                 }
             }

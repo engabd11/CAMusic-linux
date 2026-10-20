@@ -147,6 +147,10 @@ class JellyfinSource(private val client: JellyfinClient) : MusicSource {
 
     override suspend fun lyrics(songId: String): MaLyrics? = client.lyrics(songId)
 
+    override suspend fun itemExtras(id: String): ItemExtras? = client.itemExtras(id)
+
+    override suspend fun similarItems(id: String, count: Int): List<MaItem> = client.similarItems(id, count)
+
     /**
      * Jellyfin has no `getSimilarSongs`. It has `InstantMix`, which is the engine
      * behind the "Instant Mix" button in its own clients and takes a track, an album
