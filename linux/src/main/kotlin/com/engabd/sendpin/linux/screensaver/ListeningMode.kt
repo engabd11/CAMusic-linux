@@ -65,6 +65,8 @@ import com.engabd.sendpin.linux.station.SignalPath
 import com.engabd.sendpin.linux.station.QueueDeck
 import com.engabd.sendpin.linux.station.PostcardData
 import com.engabd.sendpin.linux.station.LyricSheet
+import com.engabd.sendpin.linux.station.LyricStrip
+import com.engabd.sendpin.linux.station.lyricStyle
 import com.engabd.sendpin.linux.formatMs
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Dp
@@ -188,6 +190,8 @@ private fun ListeningView(
     val big by settings.bigReadouts.collectAsState(initial = false)
     val signalPanel by settings.signalPanel.collectAsState(initial = false)
     val sleep by model.sleep.collectAsState()
+    val karaoke by settings.karaokeFill.collectAsState(initial = true)
+    val withLyrics by settings.listeningLyrics.collectAsState(initial = true)
     val scope = rememberCoroutineScope()
 
     val index = remote?.index?.takeIf { it >= 0 } ?: 0
@@ -313,6 +317,14 @@ private fun ListeningView(
             { m -> cover(withPostcard(m)) }
         }
         val deckOn = layout == ListeningLayout.VINYL && deck
+        // The song's words under the record, in every layout but the lyric sheet (which is all words).
+        val strip: @Composable (TextAlign, Float, Modifier) -> Unit = { align, sp, m ->
+            if (withLyrics) {
+                val title = track?.title ?: ""
+                val face = faceFor(listOfNotNull(track?.genre), null, title, track?.album ?: track?.id ?: title)
+                LyricStrip(model, track, lyricStyle(face, if (big) sp * 1.15f else sp, align), align, palette.accent, karaoke, m)
+            }
+        }
 
         when {
             layout == ListeningLayout.COVER -> Box(
@@ -324,6 +336,7 @@ private fun ListeningView(
                 contentAlignment = Alignment.Center,
             ) {
                 record(if (landscape) Modifier.size(minOf(h * 0.78f, w * 0.6f)) else Modifier.fillMaxWidth(0.94f))
+                strip(TextAlign.Center, 30f, Modifier.align(Alignment.BottomCenter).padding(bottom = h * 0.05f))
             }
 
             layout == ListeningLayout.POSTER -> Column(
@@ -335,11 +348,12 @@ private fun ListeningView(
             ) {
                 record(Modifier.size(if (landscape) h * 0.26f else w * 0.44f))
                 Spacer(Modifier.weight(1f))
+                strip(TextAlign.Start, 34f, Modifier.padding(bottom = 28.dp))
                 TrackWords(model, track, TextAlign.Start, titleMaxSp = 150f, big = big, signalPanel = signalPanel, accent = palette.accent)
             }
 
             layout == ListeningLayout.LYRICS -> LyricsLayout(
-                model, track, landscape, w, h, clock, { driftOffset() }, big,
+                model, track, landscape, w, h, clock, { driftOffset() }, big, palette.accent, karaoke,
             ) { m -> record(m) }
 
             landscape -> Row(
@@ -355,6 +369,7 @@ private fun ListeningView(
                 Spacer(Modifier.width(w * 0.06f))
                 Column(Modifier.weight(1f)) {
                     TrackWords(model, track, TextAlign.Start, titleMaxSp = 64f, big = big, signalPanel = signalPanel, accent = palette.accent)
+                    strip(TextAlign.Start, 28f, Modifier.padding(top = 26.dp))
                     if (deckOn) {
                         Spacer(Modifier.height(24.dp))
                         QueueDeck(model, queue, index, palette.accent)
@@ -376,7 +391,8 @@ private fun ListeningView(
                 Spacer(Modifier.weight(portraitTopWeight(clock, deckOn, signalPanel)))
                 // With the queue deck on, the record steps back to leave it room.
                 record(Modifier.fillMaxWidth(if (layout != ListeningLayout.VINYL) 0.92f else if (deckOn) 0.80f else 0.98f))
-                Spacer(Modifier.height(52.dp))
+                Spacer(Modifier.height(if (withLyrics) 28.dp else 52.dp))
+                strip(TextAlign.Center, 28f, Modifier.padding(bottom = 18.dp))
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                     TrackWords(model, track, TextAlign.Center, titleMaxSp = 54f, big = big, signalPanel = signalPanel, accent = palette.accent)
                 }
@@ -418,12 +434,14 @@ private fun LyricsLayout(
     clock: Boolean,
     drift: () -> IntOffset,
     big: Boolean,
+    accent: Color,
+    karaoke: Boolean,
     cover: @Composable (Modifier) -> Unit,
 ) {
     val title = track?.title ?: "Nothing playing"
     val face = faceFor(listOfNotNull(track?.genre), null, title, track?.album ?: track?.id ?: title)
     val sheet: @Composable (Modifier, Float) -> Unit = { m, sp ->
-        LyricSheet(model, track, face, m, TextAlign.Start, sizeSp = if (big) sp * 1.2f else sp) { NoLyrics() }
+        LyricSheet(model, track, face, m, TextAlign.Start, sizeSp = if (big) sp * 1.2f else sp, accent = accent, karaoke = karaoke) { NoLyrics() }
     }
     if (landscape) {
         Row(

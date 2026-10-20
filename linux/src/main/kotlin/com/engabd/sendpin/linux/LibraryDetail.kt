@@ -38,6 +38,13 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.animation.core.tween
+import com.engabd.sendpin.linux.ui.LocalSharedCovers
+import com.engabd.sendpin.linux.ui.Motion
+import com.engabd.sendpin.linux.ui.TILE_PX
+import com.engabd.sendpin.linux.ui.riseIn
+import com.engabd.sendpin.linux.ui.sizedArt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -240,6 +247,8 @@ private fun DetailPage(
                     onPlay = tracks?.takeIf { it.isNotEmpty() }?.let { t -> { play(header, t, 0) } },
                     onShuffle = tracks?.takeIf { it.size > 1 }?.let { t -> { play(header, t.shuffled(), 0) } },
                     favourite = source?.takeIf { it.has(Capability.FAVORITES) },
+                    onRadio = LocalStartRadio.current?.takeIf { source != null && header.mediaType == "album" }?.let { r -> { r(header) } },
+                    scrolled = { if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else 2_000f },
                 )
             }
             when {
@@ -264,6 +273,7 @@ private fun DetailPage(
                                 TrackRow(
                                     track = t,
                                     lead = lead,
+                                    index = i,
                                     number = t.trackNumber ?: (i + 1),
                                     now = now,
                                     // An album's own artist on every row is noise;
@@ -300,11 +310,15 @@ private fun DetailHero(
     favourite: MusicSource?,
     coverSize: Dp = 288.dp,
     circular: Boolean = false,
+    onRadio: (() -> Unit)? = null,
+    /** How far the page has scrolled past the hero's top, for the backdrop's parallax. */
+    scrolled: () -> Float = { 0f },
 ) {
     val accent = rememberAccent()
     val scope = rememberCoroutineScope()
+    val covers = LocalSharedCovers.current
     Box(Modifier.fillMaxWidth()) {
-        HeroBackdrop(item.image)
+        HeroBackdrop(item.image, scrolled)
         Column(Modifier.fillMaxWidth().padding(bottom = 18.dp)) {
             Row(Modifier.padding(start = PageGutter, top = 20.dp, bottom = 16.dp)) {
                 CircleButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onClick = back)
@@ -320,6 +334,10 @@ private fun DetailHero(
                     name = item.name,
                     shape = shape,
                     glyph = glyph,
+                    // Grown from the tile that was tapped; that tile's smaller copy shows
+                    // until the full-size cover has loaded, so the move never flashes blank.
+                    sharedKey = covers?.keyFor(item.itemId),
+                    placeholderUrl = sizedArt(item.image, TILE_PX),
                     modifier = Modifier
                         .size(coverSize)
                         .shadow(32.dp, shape, ambientColor = accent, spotColor = accent),
@@ -351,6 +369,7 @@ private fun DetailHero(
                             modifier = Modifier.alpha(if (onPlay != null) 1f else 0.4f),
                         )
                         if (onShuffle != null) CircleButton(Icons.Default.Shuffle, "Shuffle", onClick = onShuffle)
+                        if (onRadio != null) CircleButton(Icons.Default.Radio, "Start radio", onClick = onRadio)
                         if (favourite != null) {
                             var fav by remember(item.itemId) { mutableStateOf(item.favorite) }
                             CircleButton(
@@ -377,7 +396,7 @@ private fun DetailHero(
 
 /** The hero's backdrop: the art, huge and blurred, fading out into the page below. */
 @Composable
-private fun androidx.compose.foundation.layout.BoxScope.HeroBackdrop(image: String?) {
+private fun androidx.compose.foundation.layout.BoxScope.HeroBackdrop(image: String?, scrolled: () -> Float) {
     if (image.isNullOrBlank()) return
     // Masked to fade out, not scrimmed to a colour: the page's own ambience lies under
     // the hero, so darkening its foot to ink would draw a hard band where it ends.
@@ -399,7 +418,8 @@ private fun androidx.compose.foundation.layout.BoxScope.HeroBackdrop(image: Stri
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .matchParentSize()
-                .graphicsLayer { scaleX = 1.2f; scaleY = 1.2f }
+                // Drifts at under half the page's pace, so the hero has depth as it scrolls away.
+                .graphicsLayer { scaleX = 1.2f; scaleY = 1.2f; translationY = scrolled() * 0.45f }
                 .blur(56.dp, BlurredEdgeTreatment.Unbounded)
                 .alpha(0.6f),
         )
@@ -475,6 +495,8 @@ internal fun ArtistScreen(
                         favourite = source.takeIf { it.has(Capability.FAVORITES) },
                         coverSize = 260.dp,
                         circular = true,
+                        onRadio = LocalStartRadio.current?.let { r -> { r(header) } },
+                        scrolled = { if (gridState.firstVisibleItemIndex == 0) gridState.firstVisibleItemScrollOffset.toFloat() else 2_000f },
                     )
                 }
                 if (popular.isNotEmpty()) {
@@ -521,17 +543,24 @@ internal fun TrackRow(
     onClick: () -> Unit,
     number: Int = 0,
     showArtist: Boolean = true,
+    /** Its place on a freshly opened page, for the rise-in; -1 for none. */
+    index: Int = -1,
 ) {
     val accent = rememberAccent()
     val isNow = now.id != null && now.id == track.itemId
     val menu = LocalTrackMenu.current
+    // The playing row's wash fades in and out rather than switching.
+    val wash by androidx.compose.animation.animateColorAsState(
+        if (isNow) accent.a(0.14f) else Color.Transparent, tween(Motion.PAGE_MS), label = "rowWash",
+    )
     Row(
         Modifier
+            .riseIn(index, enabled = index >= 0)
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .heightIn(min = 72.dp)
             .clip(PanelShapes.Thumb)
-            .background(if (isNow) accent.a(0.14f) else Color.Transparent)
+            .background(wash)
             // Held, a song offers its menu (Settings → Row menus); otherwise a plain tap target.
             .then(
                 if (menu != null) Modifier.combinedClickable(onClick = onClick, onLongClick = { menu(track) })
@@ -580,3 +609,6 @@ internal fun TrackRow(
         }
     }
 }
+
+/** Starts a radio from an album, an artist or a song; null where no radio can start (the previews). */
+internal val LocalStartRadio = androidx.compose.runtime.staticCompositionLocalOf<((MaItem) -> Unit)?> { null }

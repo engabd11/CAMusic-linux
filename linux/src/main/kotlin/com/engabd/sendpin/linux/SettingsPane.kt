@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Animation
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -212,6 +213,9 @@ fun SettingsPane(modifier: Modifier, model: PanelModel) {
                 // ── Listening mode ──
                 ListeningCard(model)
 
+                // ── Gallery and lyrics ──
+                GalleryCard(model)
+
                 // ── The hi-fi station ──
                 StationCard(model)
 
@@ -334,14 +338,15 @@ private fun ScreensaverCard(model: PanelModel) {
             )
             Label("Style")
             SegmentedControl(
-                options = listOf("gallery", "bloom", "kenburns"),
+                options = listOf("gallery", "bloom", "kenburns", "wall"),
                 selected = style,
-                label = { when (it) { "bloom" -> "Album colours"; "kenburns" -> "Full bleed"; else -> "Gallery wall" } },
+                label = { when (it) { "bloom" -> "Album colours"; "kenburns" -> "Full bleed"; "wall" -> "Art wall"; else -> "Gallery wall" } },
                 onSelect = { s -> scope.launch { settings.setScreensaverStyle(s) } },
             )
             Hint(
                 when (style) {
                     "bloom" -> "The cover as a lit print, on the album's colours bleeding across the screen."
+                    "wall" -> "The library's covers in columns drifting past each other. Every few seconds one steps into the light with its name."
                     "kenburns" -> "Artist backdrop (or the cover) edge to edge, with a slow pan and zoom."
                     else -> "The cover as a lit print on a wash of its own colours."
                 },
@@ -572,6 +577,7 @@ private fun ListeningCard(model: PanelModel) {
     val delayS by settings.listeningDelayS.collectAsState(initial = 0)
     val clock by settings.listeningClock.collectAsState(initial = true)
     val layout by settings.listeningLayout.collectAsState(initial = "classic")
+    val lyrics by settings.listeningLyrics.collectAsState(initial = true)
 
     SettingsCard(Icons.Default.Headphones, "Listening mode",
         "While music plays and the panel is left alone, the controls step aside and the record takes the screen.") {
@@ -598,8 +604,53 @@ private fun ListeningCard(model: PanelModel) {
             ToggleRow("Clock", "The time and date above the record.", clock) { v ->
                 scope.launch { settings.setListeningClock(v) }
             }
+            ToggleRow("Lyrics under the record", "The line being sung, and the next one, under the cover in every layout. The Lyric sheet layout is all words.", lyrics) { v ->
+                scope.launch { settings.setListeningLyrics(v) }
+            }
             Hint("Burn-in drift (in the screensaver settings below) moves this view too.")
             PillButton("Preview now", icon = Icons.Default.PlayArrow, onClick = { model.listeningNow.value = true })
+        }
+    }
+}
+
+/**
+ * The gallery (v1.3): how the library looks and moves, and the words of the song. On by
+ * default, each one a switch.
+ */
+@Composable
+private fun GalleryCard(model: PanelModel) {
+    val settings = model.settings
+    val scope = rememberCoroutineScope()
+    val hero by settings.homeHero.collectAsState(initial = true)
+    val shared by settings.sharedCoverMotion.collectAsState(initial = true)
+    val albumsView by settings.albumsView.collectAsState(initial = "grid")
+    val karaoke by settings.karaokeFill.collectAsState(initial = true)
+    val online by settings.lyricsOnline.collectAsState(initial = true)
+
+    SettingsCard(Icons.Default.Collections, "Gallery and lyrics",
+        "The library as a wall of covers to look at, and the words of the song as it is sung.") {
+        Label("Library")
+        ToggleRow("Cover carousel on Home", "New and rediscovered records, one at a time and large, at the top of the library. It moves on by itself; swipe for the next.", hero) { v ->
+            scope.launch { settings.setHomeHero(v) }
+        }
+        ToggleRow("Covers grow into their page", "The cover you tap grows into the album page and shrinks back on Back. Needs Page transitions (Motion, above).", shared) { v ->
+            scope.launch { settings.setSharedCoverMotion(v) }
+        }
+        Label("Albums page")
+        SegmentedControl(
+            options = listOf("grid", "flow"),
+            selected = albumsView,
+            label = { if (it == "grid") "Grid" else "Cover Flow" },
+            onSelect = { v -> scope.launch { settings.setAlbumsView(v) } },
+        )
+        Hint(if (albumsView == "flow") "One record facing you, the rest turned on their edges. Left alone, it turns a record every few seconds." else "Covers four to a row.")
+
+        Label("Lyrics")
+        ToggleRow("Karaoke fill", "The line being sung fills word by word in the album's colour. Lyrics with word timing follow the voice; the rest are spread across each line.", karaoke) { v ->
+            scope.launch { settings.setKaraokeFill(v) }
+        }
+        ToggleRow("Find lyrics online", "When Jellyfin has no timed lyrics for a song, ask LRCLIB (lrclib.net). It is sent the title, artist, album and length.", online) { v ->
+            scope.launch { settings.setLyricsOnline(v) }
         }
     }
 }

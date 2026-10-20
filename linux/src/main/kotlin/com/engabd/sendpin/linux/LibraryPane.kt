@@ -1,6 +1,21 @@
+@file:OptIn(androidx.compose.animation.ExperimentalSharedTransitionApi::class)
+
 package com.engabd.sendpin.linux
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.ViewCarousel
+import com.engabd.sendpin.linux.ui.LocalCoverScope
+import com.engabd.sendpin.linux.ui.LocalRouteVisibility
+import com.engabd.sendpin.linux.ui.LocalSharedCovers
+import com.engabd.sendpin.linux.ui.LocalSharedTransition
+import com.engabd.sendpin.linux.ui.Motion
+import com.engabd.sendpin.linux.ui.SharedCovers
+import com.engabd.sendpin.linux.ui.SegmentedControl
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -105,6 +120,7 @@ import com.engabd.sendpin.linux.station.LocalActionMenu
 import com.engabd.sendpin.linux.station.LocalTrackMenu
 import com.engabd.sendpin.linux.station.libraryTrackActions
 import com.engabd.sendpin.linux.ui.PageHeader
+import com.engabd.sendpin.linux.ui.pressScale
 import com.engabd.sendpin.linux.ui.PanelShapes
 import com.engabd.sendpin.linux.ui.PillButton
 import com.engabd.sendpin.linux.ui.SectionHeader
@@ -206,6 +222,10 @@ class LibraryState {
     internal var favorites by mutableStateOf<MaSearchResults?>(null)
     internal var crates by mutableStateOf<List<CrateBin>?>(null)
     internal var query by mutableStateOf("")
+    /** Which tile grew into the page on top, for the shared cover move. */
+    internal val covers = SharedCovers()
+    /** Where the Albums Cover Flow was left, so coming back finds the same record in front. */
+    internal var flowIndex by mutableStateOf(0)
     private var bound: MusicSource? = null
 
     internal fun push(route: LibraryRoute) { stack = stack.pushed(route) }
@@ -237,6 +257,7 @@ class LibraryState {
         favorites = null
         crates = null
         query = ""
+        flowIndex = 0
     }
 }
 
@@ -291,6 +312,10 @@ fun LibraryPane(modifier: Modifier, model: PanelModel, state: LibraryState = rem
     // until switched on in Settings.
     val crateMode by model.settings.crateMode.collectAsState(initial = false)
     val rowMenus by model.settings.rowMenus.collectAsState(initial = false)
+    val heroOn by model.settings.homeHero.collectAsState(initial = true)
+    val albumsView by model.settings.albumsView.collectAsState(initial = "grid")
+    val sharedMotion by model.settings.sharedCoverMotion.collectAsState(initial = true)
+    val startRadio: (MaItem) -> Unit = { seed -> scope.launch { model.startRadio(seed) } }
     val menus = LocalActionMenu.current
     val trackMenu: ((MaItem) -> Unit)? = if (rowMenus && menus != null) { t ->
         menus.show(
@@ -313,57 +338,82 @@ fun LibraryPane(modifier: Modifier, model: PanelModel, state: LibraryState = rem
                             ?.let { open(LibraryRoute.Artist(it)) }
                     }
                 },
+                onRadio = { startRadio(t) },
             ),
         )
     } else null
 
     val pageTransitions by model.settings.pageTransitions.collectAsState(initial = true)
+    val shared = pageTransitions && sharedMotion
     val holder = rememberSaveableStateHolder()
-    CompositionLocalProvider(LocalTrackMenu provides trackMenu) {
-        Box(modifier) {
-            // A deeper page slides in from the right over the one it came from; going back
-            // (or home) runs the same move the other way.
-            AnimatedContent(
-                targetState = RouteAt(state.stack.last(), state.stack.size),
-                contentKey = { it.route.key },
-                transitionSpec = {
-                    if (!pageTransitions) {
-                        EnterTransition.None togetherWith ExitTransition.None
-                    } else {
-                        val forward = targetState.depth >= initialState.depth
-                        val dir = if (forward) 1 else -1
-                        (fadeIn(tween(260, delayMillis = 40)) +
-                            slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { dir * it / 5 }) togetherWith
-                            (fadeOut(tween(180)) +
-                                slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -dir * it / 10 })
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-                label = "libraryRoute",
-            ) { at ->
-                val route = at.route
-                holder.SaveableStateProvider(route.key) {
-                    when (route) {
-                        LibraryRoute.Home -> HomeScreen(source, state, open, play, crates = crateMode)
-                        LibraryRoute.Crates -> CratesScreen(source, state, open, back)
-                        LibraryRoute.Search -> SearchScreen(source, state, open, play, back)
-                        is LibraryRoute.Browse -> BrowseScreen(route.category, source, state, now, open, play, back)
-                        is LibraryRoute.Album -> AlbumScreen(route.item, source, now, open, play, back)
-                        is LibraryRoute.Artist -> ArtistScreen(route.item, source, now, open, play, back)
-                        is LibraryRoute.Playlist -> TrackListScreen(
-                            header = route.item, eyebrow = "Playlist", now = now, play = play, back = back,
-                            load = { source.playlistTracks(route.item.itemId) },
-                        )
-                        is LibraryRoute.Genre -> TrackListScreen(
-                            header = route.item, eyebrow = "Genre", now = now, play = play, back = back,
-                            load = { source.songsByGenre(route.item.name) },
-                        )
+    CompositionLocalProvider(
+        LocalTrackMenu provides trackMenu,
+        LocalStartRadio provides startRadio,
+        LocalSharedCovers provides state.covers,
+    ) {
+        SharedTransitionLayout(modifier) {
+            CompositionLocalProvider(LocalSharedTransition provides if (shared) this else null) {
+                // A deeper page slides in from the right over the one it came from; going back
+                // (or home) runs the same move the other way. Into or out of a record's own
+                // page the cover itself carries the eye, so the pages only cross-fade.
+                AnimatedContent(
+                    targetState = RouteAt(state.stack.last(), state.stack.size),
+                    contentKey = { it.route.key },
+                    transitionSpec = {
+                        val detail = targetState.route.hasCover || initialState.route.hasCover
+                        when {
+                            !pageTransitions -> EnterTransition.None togetherWith ExitTransition.None
+                            shared && detail ->
+                                (fadeIn(tween(Motion.PAGE_MS, delayMillis = 60, easing = Motion.Standard)) +
+                                    scaleIn(tween(Motion.SHARED_MS, easing = Motion.Emphasized), initialScale = 0.97f)) togetherWith
+                                    (fadeOut(tween(Motion.FADE_MS)) + scaleOut(tween(Motion.SHARED_MS), targetScale = 1.02f))
+                            else -> {
+                                val forward = targetState.depth >= initialState.depth
+                                val dir = if (forward) 1 else -1
+                                (fadeIn(tween(Motion.FADE_MS + 60, delayMillis = 40)) +
+                                    slideInHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { dir * it / 5 }) togetherWith
+                                    (fadeOut(tween(Motion.FADE_MS - 40)) +
+                                        slideOutHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { -dir * it / 10 })
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "libraryRoute",
+                ) { at ->
+                    val route = at.route
+                    CompositionLocalProvider(LocalRouteVisibility provides this) {
+                        holder.SaveableStateProvider(route.key) {
+                            when (route) {
+                                LibraryRoute.Home -> HomeScreen(source, state, open, play, crates = crateMode, hero = heroOn, onRadio = startRadio)
+                                LibraryRoute.Crates -> CratesScreen(source, state, open, back)
+                                LibraryRoute.Search -> SearchScreen(source, state, open, play, back)
+                                is LibraryRoute.Browse -> BrowseScreen(
+                                    route.category, source, state, now, open, play, back,
+                                    albumsView = albumsView,
+                                    onAlbumsView = { v -> scope.launch { model.settings.setAlbumsView(v) } },
+                                )
+                                is LibraryRoute.Album -> AlbumScreen(route.item, source, now, open, play, back)
+                                is LibraryRoute.Artist -> ArtistScreen(route.item, source, now, open, play, back)
+                                is LibraryRoute.Playlist -> TrackListScreen(
+                                    header = route.item, eyebrow = "Playlist", now = now, play = play, back = back,
+                                    load = { source.playlistTracks(route.item.itemId) },
+                                )
+                                is LibraryRoute.Genre -> TrackListScreen(
+                                    header = route.item, eyebrow = "Genre", now = now, play = play, back = back,
+                                    load = { source.songsByGenre(route.item.name) },
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
+
+/** Pages whose hero is a cover a tile can grow into. */
+private val LibraryRoute.hasCover: Boolean
+    get() = this is LibraryRoute.Album || this is LibraryRoute.Artist || this is LibraryRoute.Playlist
 
 /** A library page and how deep in the stack it sits — the depth decides which way it slides. */
 private data class RouteAt(val route: LibraryRoute, val depth: Int)
@@ -385,6 +435,8 @@ private fun lookOf(c: LibraryCategory): CategoryLook = when (c) {
 
 private val CratesLook = CategoryLook("Crates", Icons.Default.Inventory2, listOf(Color(0xFFC98B52), Color(0xFF5A3417)))
 
+private val RadioLook = CategoryLook("Radio", Icons.Default.Radio, listOf(Color(0xFFFF8A3D), Color(0xFF9B1F5E)))
+
 private val ShuffleLook = CategoryLook("Shuffle all", Icons.Default.Shuffle, listOf(Color(0xFF5C7CFA), Color(0xFF1FB5C9)))
 
 @Composable
@@ -394,6 +446,8 @@ private fun HomeScreen(
     open: (LibraryRoute) -> Unit,
     play: (MaItem, List<MaItem>, Int) -> Unit,
     crates: Boolean = false,
+    hero: Boolean = true,
+    onRadio: ((MaItem) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -412,6 +466,9 @@ private fun HomeScreen(
         if (state.homeSmooth) listState.animateScrollToItem(0) else listState.scrollToItem(0)
     }
     val home = state.home
+    // Remembered: the slides take a shuffled pick of favourites, and must hold still.
+    val slides = remember(home, hero) { if (hero && home != null) heroSlides(home) else emptyList() }
+    val heroShown = slides.size > 1
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
@@ -429,9 +486,34 @@ private fun HomeScreen(
                     SearchBar(onClick = { open(LibraryRoute.Search) })
                 }
             }
+            // The carousel first: on a panel that is looked at, the covers lead.
+            if (heroShown) {
+                item(key = "hero") {
+                    CompositionLocalProvider(LocalCoverScope provides "hero") {
+                        HeroCarousel(
+                            slides = slides,
+                            onOpen = { open(LibraryRoute.Album(it)) },
+                            onPlay = { a ->
+                                scope.launch {
+                                    val (_, tracks) = runCatching { source.albumDetail(a.itemId) }
+                                        .getOrDefault(null to emptyList())
+                                    if (tracks.isNotEmpty()) play(a, tracks, 0)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
             item(key = "cards") {
                 CategoryGrid(
                     onCrates = if (crates) ({ open(LibraryRoute.Crates) }) else null,
+                    onRadio = onRadio?.let { r ->
+                        {
+                            scope.launch {
+                                runCatching { source.randomSongs(1) }.getOrNull()?.firstOrNull()?.let(r)
+                            }
+                        }
+                    },
                     onCategory = { open(LibraryRoute.Browse(it)) },
                     onShuffle = {
                         scope.launch {
@@ -453,7 +535,7 @@ private fun HomeScreen(
                     }
                 }
             } else {
-                home.featured?.let { f ->
+                if (!heroShown) home.featured?.let { f ->
                     item(key = "featured") {
                         FeaturedCard(
                             item = f,
@@ -556,10 +638,15 @@ private fun SearchBar(onClick: () -> Unit) {
 
 /** The category cards, four to a row — two rows fill the panel's width with colour. */
 @Composable
-private fun CategoryGrid(onCategory: (LibraryCategory) -> Unit, onShuffle: () -> Unit, onCrates: (() -> Unit)? = null) {
+private fun CategoryGrid(
+    onCategory: (LibraryCategory) -> Unit,
+    onShuffle: () -> Unit,
+    onCrates: (() -> Unit)? = null,
+    onRadio: (() -> Unit)? = null,
+) {
     val cards: List<Pair<CategoryLook, () -> Unit>> =
         LibraryCategory.entries.map { c -> lookOf(c) to { onCategory(c) } } + (ShuffleLook to onShuffle) +
-            listOfNotNull(onCrates?.let { CratesLook to it })
+            listOfNotNull(onRadio?.let { RadioLook to it }, onCrates?.let { CratesLook to it })
     Column(
         Modifier.padding(horizontal = PageGutter),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -567,9 +654,9 @@ private fun CategoryGrid(onCategory: (LibraryCategory) -> Unit, onShuffle: () ->
         cards.chunked(4).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 row.forEach { (look, onClick) ->
-                    CategoryCard(look.label, look.icon, look.colors, onClick, Modifier.weight(1f))
+                    CategoryCard(look.label, look.icon, look.colors, onClick, Modifier.weight(1f).pressScale())
                 }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                // A short last row stretches across: one card alone becomes a full-width banner.
             }
         }
     }
@@ -652,6 +739,8 @@ private fun BrowseScreen(
     open: (LibraryRoute) -> Unit,
     play: (MaItem, List<MaItem>, Int) -> Unit,
     back: () -> Unit,
+    albumsView: String = "grid",
+    onAlbumsView: (String) -> Unit = {},
 ) {
     var error by remember(category) { mutableStateOf<String?>(null) }
     var loadingMore by remember(category) { mutableStateOf(false) }
@@ -713,7 +802,19 @@ private fun BrowseScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        PageHeader(title = category.label, subtitle = subtitle, onBack = back)
+        val flow = category == LibraryCategory.ALBUMS && albumsView == "flow"
+        PageHeader(title = category.label, subtitle = subtitle, onBack = back) {
+            if (category == LibraryCategory.ALBUMS) {
+                SegmentedControl(
+                    options = listOf("grid", "flow"),
+                    selected = albumsView,
+                    label = { if (it == "grid") "Grid" else "Flow" },
+                    icon = { if (it == "grid") Icons.Default.GridView else Icons.Default.ViewCarousel },
+                    onSelect = onAlbumsView,
+                    modifier = Modifier.width(250.dp),
+                )
+            }
+        }
         when {
             error != null -> EmptyState(Icons.Default.ErrorOutline, "Couldn't load ${category.label.lowercase()}", error!!)
             category == LibraryCategory.FAVORITES -> FavoritesBody(state.favorites, now, open, play)
@@ -721,7 +822,17 @@ private fun BrowseScreen(
             items.isEmpty() -> EmptyState(lookOf(category).icon, "No ${category.label.lowercase()}", "Nothing in the library here yet.")
             category == LibraryCategory.SONGS -> SongList(items, now, play, onNearEnd = ::loadMore)
             category == LibraryCategory.GENRES -> GenreGrid(items) { open(LibraryRoute.Genre(it)) }
+            flow -> CompositionLocalProvider(LocalCoverScope provides "flow") {
+                CoverFlow(
+                    items = items,
+                    start = state.flowIndex,
+                    onSettle = { state.flowIndex = it },
+                    onOpen = { open(LibraryRoute.Album(it)) },
+                    onNearEnd = if (state.exhausted[category] != true) ::loadMore else null,
+                )
+            }
             else -> ItemGrid(
+                scopeName = "grid:${category.name}",
                 items = items,
                 circular = category == LibraryCategory.ARTISTS,
                 onNearEnd = if (paged) ::loadMore else null,
@@ -744,6 +855,7 @@ private const val GRID_COLUMNS = 4
 
 @Composable
 private fun ItemGrid(
+    scopeName: String = "grid",
     items: List<MaItem>,
     circular: Boolean,
     onNearEnd: (() -> Unit)?,
@@ -766,8 +878,10 @@ private fun ItemGrid(
             verticalArrangement = Arrangement.spacedBy(22.dp),
             modifier = Modifier.fillMaxSize().touchDragScroll(gridState),
         ) {
-            itemsIndexed(items, key = { i, it -> "$i:${it.itemId}" }) { _, item ->
-                ArtTile(item, onClick, circular = circular)
+            itemsIndexed(items, key = { i, it -> "$i:${it.itemId}" }) { i, item ->
+                CompositionLocalProvider(LocalCoverScope provides scopeName) {
+                    ArtTile(item, onClick, circular = circular, index = i)
+                }
             }
         }
         VerticalScrollbar(

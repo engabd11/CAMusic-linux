@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -449,17 +450,29 @@ fun ArtImage(
     modifier: Modifier = Modifier,
     shape: Shape = PanelShapes.Tile,
     glyph: ImageVector = Icons.Default.MusicNote,
+    /** This cover's key in the grow-into-page move (see `Motion.kt`), or null. */
+    sharedKey: String? = null,
+    /** A smaller copy of the same cover already in memory, shown while [url] loads. */
+    placeholderUrl: String? = null,
 ) {
     Box(
         modifier
+            .sharedCover(sharedKey)
             .clip(shape)
             .background(Brush.linearGradient(placeholderColors(name))),
         contentAlignment = Alignment.Center,
     ) {
         Icon(glyph, null, tint = Color.White.a(0.35f), modifier = Modifier.fillMaxSize(0.36f))
         if (!url.isNullOrBlank()) {
+            val context = coil3.compose.LocalPlatformContext.current
+            val request = remember(url, placeholderUrl) {
+                coil3.request.ImageRequest.Builder(context)
+                    .data(url)
+                    .apply { if (placeholderUrl != null && placeholderUrl != url) placeholderMemoryCacheKey(placeholderUrl) }
+                    .build()
+            }
             AsyncImage(
-                model = url,
+                model = request,
                 contentDescription = name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -478,19 +491,26 @@ fun ArtTile(
     onClick: (MaItem) -> Unit,
     modifier: Modifier = Modifier,
     circular: Boolean = false,
+    /** Its place on a freshly opened page, for the rise-in; -1 for none. */
+    index: Int = -1,
 ) {
+    val covers = LocalSharedCovers.current
+    val key = "${LocalCoverScope.current}/${item.itemId}"
     Column(
         modifier
+            .riseIn(index, enabled = index >= 0)
+            .pressScale()
             .clip(PanelShapes.Tile)
-            .clickable { onClick(item) }
+            .clickable { covers?.lastTapped = key; onClick(item) }
             .padding(bottom = 6.dp),
         horizontalAlignment = if (circular) Alignment.CenterHorizontally else Alignment.Start,
     ) {
         ArtImage(
-            url = item.image,
+            url = sizedArt(item.image, TILE_PX),
             name = item.name,
             shape = if (circular) CircleShape else PanelShapes.Tile,
             modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+            sharedKey = key,
         )
         Spacer(Modifier.height(10.dp))
         Text(
@@ -539,6 +559,7 @@ fun Shelf(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionHeader(title, action = action, onAction = onAction)
         val rowState = rememberLazyListState()
+        androidx.compose.runtime.CompositionLocalProvider(LocalCoverScope provides "shelf:$title") {
         LazyRow(
             state = rowState,
             contentPadding = PaddingValues(horizontal = PageGutter),
@@ -547,9 +568,10 @@ fun Shelf(
         ) {
             // Index in the key: a shelf can legitimately hold one item twice (a track's
             // album and the album itself), and a duplicate key is a crash, not a glitch.
-            itemsIndexed(items, key = { i, it -> "$i:${it.itemId}" }) { _, item ->
-                ArtTile(item, onClick, Modifier.width(tileWidth), circular = circular)
+            itemsIndexed(items, key = { i, it -> "$i:${it.itemId}" }) { i, item ->
+                ArtTile(item, onClick, Modifier.width(tileWidth), circular = circular, index = i)
             }
+        }
         }
     }
 }

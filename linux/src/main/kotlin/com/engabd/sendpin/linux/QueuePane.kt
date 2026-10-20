@@ -149,6 +149,7 @@ fun QueuePane(modifier: Modifier, model: PanelModel) {
             subtitle = if (queue.isEmpty()) null else
                 "${queue.size} ${if (queue.size == 1) "song" else "songs"}  ·  ${formatTotal(remaining)} left",
         ) {
+            com.engabd.sendpin.linux.station.RadioChip(model)
             if (queue.isNotEmpty()) {
                 PillButton("Shuffle", icon = Icons.Default.Shuffle, filled = false, onClick = { scope.launch { model.shuffleQueue() } })
                 PillButton("Clear", icon = Icons.Default.DeleteSweep, filled = false, onClick = { scope.launch { model.clearQueue() } })

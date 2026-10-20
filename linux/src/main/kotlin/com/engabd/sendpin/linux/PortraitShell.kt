@@ -25,6 +25,11 @@ import com.engabd.sendpin.linux.station.FlippableCover
 import com.engabd.sendpin.linux.station.LocalBigReadouts
 import com.engabd.sendpin.linux.station.SignalSheet
 import com.engabd.sendpin.linux.station.SleepChip
+import com.engabd.sendpin.linux.station.LyricsChip
+import com.engabd.sendpin.linux.station.PlayerLyrics
+import com.engabd.sendpin.linux.station.RadioChip
+import com.engabd.sendpin.linux.ui.Motion
+import com.engabd.sendpin.linux.ui.TabSwitch
 import com.engabd.sendpin.linux.station.SleeveBack
 import com.engabd.sendpin.linux.station.VolumeRail
 import com.engabd.sendpin.linux.station.swipeToSkip
@@ -247,7 +252,7 @@ private fun PortraitShellBody(
                         }
                     }
                     if (pageTransitions) {
-                        Crossfade(tab, Modifier.fillMaxSize(), tween(180), label = "tab") { tabPane(it) }
+                        TabSwitch(tab, Modifier.fillMaxSize()) { tabPane(it) }
                     } else {
                         tabPane(tab)
                     }
@@ -324,6 +329,9 @@ private fun NowPlayingCover(
     val sleepChip by model.settings.sleepTimer.collectAsState(initial = false)
     val big = LocalBigReadouts.current
     var signalOpen by remember { mutableStateOf(false) }
+    // The cover turned into the song's words (the Lyrics chip).
+    var lyricsOpen by remember { mutableStateOf(false) }
+    val karaoke by model.settings.karaokeFill.collectAsState(initial = true)
     // Paused, the record settles back a little and dims; playing, it springs forward.
     val rest = remember { Animatable(0f) }
     LaunchedEffect(playing, restsOnPause, track != null) {
@@ -441,16 +449,31 @@ private fun NowPlayingCover(
                         .aspectRatio(1f)
                         .swipeToSkip(touch, { scope.launch { model.next() } }, { scope.launch { model.previous() } }),
                 ) {
-                    FlippableCover(sleeve, Modifier.fillMaxSize(), back = { SleeveBack(model) }) {
-                        AlbumArtStage(
-                            art = nowArt,
-                            modifier = Modifier.fillMaxSize(),
-                            transition = transition,
-                            glow = accent,
-                            shape = RoundedCornerShape(28.dp),
-                            rest = { rest.value },
-                            contentDescription = track?.album ?: track?.title,
-                        )
+                    AnimatedContent(
+                        targetState = lyricsOpen,
+                        transitionSpec = {
+                            (fadeIn(tween(Motion.PAGE_MS, easing = Motion.Standard)) +
+                                scaleIn(tween(Motion.PAGE_MS, easing = Motion.Emphasized), initialScale = 0.96f)) togetherWith
+                                (fadeOut(tween(Motion.FADE_MS)) + scaleOut(tween(Motion.PAGE_MS), targetScale = 0.96f))
+                        },
+                        label = "coverLyrics",
+                        modifier = Modifier.fillMaxSize(),
+                    ) { words ->
+                        if (words) {
+                            PlayerLyrics(model, track, accent, karaoke, onClose = { lyricsOpen = false }, modifier = Modifier.fillMaxSize())
+                        } else {
+                            FlippableCover(sleeve, Modifier.fillMaxSize(), back = { SleeveBack(model) }) {
+                                AlbumArtStage(
+                                    art = nowArt,
+                                    modifier = Modifier.fillMaxSize(),
+                                    transition = transition,
+                                    glow = accent,
+                                    shape = RoundedCornerShape(28.dp),
+                                    rest = { rest.value },
+                                    contentDescription = track?.album ?: track?.title,
+                                )
+                            }
+                        }
                     }
                     if (touch) {
                         VolumeRail(state?.volume, { v -> scope.launch { model.setVolume(v) } }, Modifier.align(Alignment.CenterEnd))
@@ -476,8 +499,10 @@ private fun NowPlayingCover(
                         .then(if (signalPanel) Modifier.clickable { signalOpen = true } else Modifier),
                 ) { MpdQualityBadge(track = track, outputFormat = state?.outputFormat) }
                 LoudnessChip(model)
+                LyricsChip(lyricsOpen) { lyricsOpen = !lyricsOpen }
                 if (sleepChip) SleepChip(model)
             }
+            RadioChip(model)
 
             // Title block — centred, the overlay's own arrangement. Title and artist
             // are sized to *fill* the space under the cover, not just sit in it. On a

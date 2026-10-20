@@ -97,6 +97,8 @@ internal fun LyricSheet(
     modifier: Modifier = Modifier,
     align: TextAlign = TextAlign.Start,
     sizeSp: Float = 34f,
+    accent: Color = Color.White,
+    karaoke: Boolean = true,
     fallback: @Composable () -> Unit,
 ) {
     val key = track?.scrobbleId ?: track?.id
@@ -105,40 +107,23 @@ internal fun LyricSheet(
         value = track?.let { model.lyricsFor(it) }?.let { LyricsState.Found(it) } ?: LyricsState.None
     }
     when (val s = state) {
-        is LyricsState.Found -> Sheet(model, s.lyrics, face, modifier, align, sizeSp)
+        is LyricsState.Found -> Sheet(model, s.lyrics, face, modifier, align, sizeSp, accent, karaoke)
         else -> Box(modifier) { fallback() }
     }
 }
 
 @Composable
-private fun Sheet(model: PanelModel, lyrics: MaLyrics, face: Face, modifier: Modifier, align: TextAlign, sizeSp: Float) {
-    val spec = specOf(face)
-    val base = sizeSp * spec.scale.coerceIn(0.86f, 1.12f)
-    val style = TextStyle(
-        fontFamily = spec.family,
-        fontWeight = spec.weight,
-        fontStyle = spec.style,
-        fontSize = base.sp,
-        letterSpacing = spec.tracking.em,
-        lineHeight = (base * maxOf(spec.lineHeight, 1.14f)).sp,
-        textAlign = align,
-    )
-    val lines = remember(lyrics) { sheetLines(lyrics.lines, lyrics.synced) }
-    val playhead = rememberPlayhead(model)
+private fun Sheet(
+    model: PanelModel, lyrics: MaLyrics, face: Face, modifier: Modifier, align: TextAlign, sizeSp: Float,
+    accent: Color, karaoke: Boolean,
+) {
+    val style = lyricStyle(face, sizeSp, align)
+    val base = style.fontSize.value
+    val lines = remember(lyrics, karaoke) { karaokeLines(lyrics, karaoke) }
     BoxWithConstraints(modifier.fadeEdges()) {
         val h = maxHeight
         if (lyrics.synced) {
-            val active by remember(lines) { derivedStateOf { activeLyricIndex(lines, playhead.value) } }
-            val listState = rememberLazyListState()
-            LaunchedEffect(active) { if (active >= 0) listState.animateScrollToItem(active) }
-            LazyColumn(
-                state = listState,
-                userScrollEnabled = false,
-                contentPadding = PaddingValues(top = h * 0.36f, bottom = h * 0.6f),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                itemsIndexed(lines) { i, line -> SungLine(line, i - active, style, align) }
-            }
+            KaraokeSheet(model, lines, style, align, accent, Modifier.fillMaxSize())
         } else {
             val scroll = rememberScrollState()
             val remote by model.state.collectAsState()
@@ -161,34 +146,18 @@ private fun Sheet(model: PanelModel, lyrics: MaLyrics, face: Face, modifier: Mod
     }
 }
 
-/** One line of a timed lyric: bright and a touch larger while sung, fading with distance. */
-@Composable
-private fun SungLine(line: LyricLine, distance: Int, style: TextStyle, align: TextAlign) {
-    val d = abs(distance)
-    val alpha by animateFloatAsState(
-        when { distance < 0 && d > 2 -> 0.20f; d == 0 -> 1f; d == 1 -> 0.52f; d == 2 -> 0.36f; else -> 0.26f },
-        tween(420), label = "lyricAlpha",
-    )
-    val scale by animateFloatAsState(if (d == 0) 1.1f else 1f, tween(420), label = "lyricScale")
-    val origin = TransformOrigin(if (align == TextAlign.Center) 0.5f else 0f, 0.5f)
-    if (line.text.isBlank()) {
-        // An instrumental gap: a rest, not a hole.
-        Text("♪", style = style, color = Color.White.copy(alpha = alpha * 0.8f), modifier = Modifier.fillMaxWidth(0.9f).padding(vertical = 10.dp))
-        return
-    }
-    Text(
-        line.text,
-        style = style,
-        color = Color.White,
-        modifier = Modifier
-            .fillMaxWidth(0.88f)
-            .padding(vertical = 10.dp)
-            .graphicsLayer {
-                this.alpha = alpha
-                scaleX = scale
-                scaleY = scale
-                transformOrigin = origin
-            },
+/** The words set in the album's own face, at about [sizeSp]. */
+internal fun lyricStyle(face: Face, sizeSp: Float, align: TextAlign): TextStyle {
+    val spec = specOf(face)
+    val base = sizeSp * spec.scale.coerceIn(0.86f, 1.12f)
+    return TextStyle(
+        fontFamily = spec.family,
+        fontWeight = spec.weight,
+        fontStyle = spec.style,
+        fontSize = base.sp,
+        letterSpacing = spec.tracking.em,
+        lineHeight = (base * maxOf(spec.lineHeight, 1.14f)).sp,
+        textAlign = align,
     )
 }
 

@@ -167,6 +167,7 @@ fun PlayerPane(modifier: Modifier, model: PanelModel) {
             com.engabd.sendpin.ui.design.MpdQualityBadge(track = track, outputFormat = state?.outputFormat)
             LoudnessChip(model)
             if (sleepChip) SleepChip(model)
+            com.engabd.sendpin.linux.station.RadioChip(model)
         }
 
         // Seek — the cover's wavy bar in the album's accent; scrub commits on release

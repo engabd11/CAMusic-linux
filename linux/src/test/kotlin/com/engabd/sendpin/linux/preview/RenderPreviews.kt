@@ -98,6 +98,8 @@ private fun renderAll(args: Array<String>) {
             settings.setHueGhostUrl("http://192.168.1.20:8765")
             settings.setHueGhostToken("hg_live_29c1f0")
             settings.setReplayGainMode("album")
+            // Never reach out to lrclib.net from a preview.
+            settings.setLyricsOnline(false)
         }
         return PanelModel(settings).apply {
             _source.value = lib
@@ -175,7 +177,7 @@ private fun renderAll(args: Array<String>) {
     fun screensaver(
         name: String, style: String, width: Int, height: Int,
         clock: Boolean = true, albumText: Boolean = false,
-        textSize: String = "regular", clockAt: String = "right",
+        textSize: String = "regular", clockAt: String = "right", frames: Int = 320,
     ) {
         val m = freshModel()
         runBlocking {
@@ -187,7 +189,7 @@ private fun renderAll(args: Array<String>) {
         }
         m.state.value = m.state.value?.copy(playing = false)
         m.screensaverNow.value = true
-        render(File(out, "$name.png"), width, height, frames = 320) {
+        render(File(out, "$name.png"), width, height, frames = frames) {
             Themed { ScreensaverHost(m, remember { IdleGate() }) }
         }
     }
@@ -199,6 +201,8 @@ private fun renderAll(args: Array<String>) {
     screensaver("23-screensaver-colours-portrait", "bloom", 800, 1280, albumText = true, textSize = "large", clockAt = "centre")
     screensaver("24-screensaver-gallery-albumtext", "gallery", 800, 1280, albumText = true, textSize = "small", clockAt = "left")
     screensaver("25-screensaver-large-landscape", "gallery", 1280, 800, textSize = "large", clockAt = "left")
+    screensaver("66-screensaver-art-wall-portrait", "wall", 800, 1280, frames = 520)
+    screensaver("67-screensaver-art-wall-landscape", "wall", 1280, 800, frames = 520)
 
     // The listening view, forced on ("Preview now") while the fake album plays — long
     // enough for the cover to arrive and, past the 10 s mark, begin to come alive.
@@ -345,7 +349,39 @@ private fun renderAll(args: Array<String>) {
         t = 3 * 60 * 60_000L
         com.engabd.sendpin.linux.station.DeepIdleHost(m, gate)
     }
-    portrait("57-station-settings-full", PanelTab.SETTINGS, height = 5600)
+    portrait("57-station-settings-full", PanelTab.SETTINGS, height = 5800)
+
+    // The v1.3 gallery: the Home carousel, Cover Flow, and the words as they are sung.
+    looked("60-gallery-home", 800, 1280, frames = 160, setup = { setLivingArt("off") }) { m ->
+        PortraitShell(m, initialTab = PanelTab.LIBRARY, initiallyExpanded = false, libraryState = remember { LibraryState().also { it.bind(lib) } })
+    }
+    looked("61-gallery-cover-flow", 800, 1280, frames = 200, setup = { setLivingArt("off"); setAlbumsView("flow") }) { m ->
+        PortraitShell(
+            m, initialTab = PanelTab.LIBRARY, initiallyExpanded = false,
+            libraryState = remember {
+                LibraryState().also { it.bind(lib); it.flowIndex = 3; it.stack = listOf(LibraryRoute.Home, LibraryRoute.Browse(LibraryCategory.ALBUMS)) }
+            },
+        )
+    }
+    looked("62-gallery-cover-flow-landscape", 1280, 800, frames = 200, setup = { setLivingArt("off"); setAlbumsView("flow") }) { m ->
+        PanelShell(m, LayoutMode.LANDSCAPE, libraryState = remember {
+            LibraryState().also { it.bind(lib); it.flowIndex = 5; it.stack = listOf(LibraryRoute.Home, LibraryRoute.Browse(LibraryCategory.ALBUMS)) }
+        })
+    }
+    looked("63-karaoke-lyric-sheet", 800, 1280, frames = 360, setup = { setLivingArt("off"); setListeningLayout("lyrics") }) { m ->
+        m.state.value = m.state.value?.copy(positionMs = 27_400)
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("64-karaoke-vinyl-strip", 800, 1280, frames = 360, setup = { setLivingArt("off"); setListeningLayout("vinyl") }) { m ->
+        m.state.value = m.state.value?.copy(positionMs = 27_400)
+        m.listeningNow.value = true
+        ListeningHost(m, remember { IdleGate() })
+    }
+    looked("65-radio-now-playing", 800, 1280, frames = 160, setup = { setLivingArt("off") }) { m ->
+        m.radio.value = com.engabd.sendpin.linux.station.RadioSession("Glass Tides", "album")
+        nowPlaying(m)
+    }
 
     // The postcard is a card, not a screen: render it straight from a cover off the preview server.
     if (System.getenv("PREVIEW_ONLY").let { it.isNullOrBlank() || it.split(',').any { k -> "50-station-postcard".contains(k.trim()) || k.trim() == "station" } }) {

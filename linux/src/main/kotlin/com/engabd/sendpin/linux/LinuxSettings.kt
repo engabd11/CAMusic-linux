@@ -340,6 +340,31 @@ class LinuxSettings(private val path: Path) {
     suspend fun setLibraryRetapHome(value: Boolean) = set("library_retap_home", JsonPrimitive(value))
     suspend fun setPageTransitions(value: Boolean) = set("page_transitions", JsonPrimitive(value))
 
+    // ── The gallery (v1.3) ────────────────────────────────────────────────
+    //
+    // The look and motion of a station that is mostly watched: on by default, each one
+    // still a switch in Settings → Display & motion.
+
+    /** The line being sung fills word by word, like karaoke. */
+    val karaokeFill: Flow<Boolean> = bool("karaoke_fill", true)
+    /** Ask LRCLIB (lrclib.net) for lyrics when Jellyfin has no timed ones. */
+    val lyricsOnline: Flow<Boolean> = bool("lyrics_online", true)
+    /** The words of the song under the record in every listening layout, not only the lyric sheet. */
+    val listeningLyrics: Flow<Boolean> = bool("listening_lyrics", true)
+    /** A full-width carousel of covers at the top of the library home. */
+    val homeHero: Flow<Boolean> = bool("home_hero", true)
+    /** `grid` | `flow` — how the Albums page lays its covers out. */
+    val albumsView: Flow<String> = str("albums_view", "grid")
+    /** The cover a finger taps grows into the album page instead of the page sliding in. */
+    val sharedCoverMotion: Flow<Boolean> = bool("shared_cover_motion", true)
+
+    suspend fun setKaraokeFill(value: Boolean) = set("karaoke_fill", JsonPrimitive(value))
+    suspend fun setLyricsOnline(value: Boolean) = set("lyrics_online", JsonPrimitive(value))
+    suspend fun setListeningLyrics(value: Boolean) = set("listening_lyrics", JsonPrimitive(value))
+    suspend fun setHomeHero(value: Boolean) = set("home_hero", JsonPrimitive(value))
+    suspend fun setAlbumsView(value: String) = set("albums_view", JsonPrimitive(value))
+    suspend fun setSharedCoverMotion(value: Boolean) = set("shared_cover_motion", JsonPrimitive(value))
+
     companion object {
         /** The default settings path on this machine. */
         fun defaultPath(): Path {

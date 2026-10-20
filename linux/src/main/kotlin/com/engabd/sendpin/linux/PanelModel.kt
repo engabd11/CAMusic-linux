@@ -6,7 +6,12 @@ import com.engabd.sendpin.jellyfin.JellyfinClient
 import com.engabd.sendpin.library.Capability
 import com.engabd.sendpin.library.JellyfinSource
 import com.engabd.sendpin.library.MusicSource
+import com.engabd.sendpin.lyrics.Lrclib
+import com.engabd.sendpin.linux.station.LibraryRadioSource
+import com.engabd.sendpin.linux.station.LocalRadio
+import com.engabd.sendpin.linux.station.RadioSession
 import com.engabd.sendpin.linux.station.SleepAction
+import com.engabd.sendpin.linux.station.radioNeedsMore
 import com.engabd.sendpin.linux.station.SleepChoice
 import com.engabd.sendpin.linux.station.SleepTimer
 import com.engabd.sendpin.linux.station.sideOf
@@ -79,6 +84,13 @@ class PanelModel(val settings: LinuxSettings) {
 
     /** The sleep timer, if one is running. */
     val sleep = MutableStateFlow<SleepTimer?>(null)
+
+    /** The radio, while one is keeping the queue topped up. */
+    val radio = MutableStateFlow<RadioSession?>(null)
+    private val localRadio = LocalRadio()
+    /** The newest track the radio queued: the seed of its next batch. */
+    @Volatile private var radioSeed: MaItem? = null
+    private val radioFilling = java.util.concurrent.atomic.AtomicBoolean(false)
 
     // Clients as StateFlows so panes recompose the moment they come up — a plain
     // var set after first composition is invisible to Compose (the Library tab
@@ -270,6 +282,7 @@ class PanelModel(val settings: LinuxSettings) {
                     reading?.let { readings.trySend(it) }
                 }
                 sleepTick(state.value)
+                radioTick(state.value)
                 // Another client can change MPD's loudness under us (see [replayGain]);
                 // one extra command every 10 s keeps the readback honest without
                 // doubling the poll's traffic.
@@ -479,7 +492,7 @@ class PanelModel(val settings: LinuxSettings) {
     suspend fun removeFromQueue(index: Int) = guarded("Remove") { remote?.removeAt(index) }.also { wake.trySend(Unit) }
     suspend fun moveInQueue(from: Int, to: Int) = guarded("Move") { remote?.move(from, to) }.also { wake.trySend(Unit) }
     suspend fun shuffleQueue() = guarded("Shuffle") { remote?.shuffleQueue() }
-    suspend fun clearQueue() = guarded("Clear") { remote?.clear() }
+    suspend fun clearQueue() = guarded("Clear") { stopRadio(); remote?.clear() }
 
     /** MPD's volume, 0..1, when it has a mixer to set (a fixed output answers nothing). */
     suspend fun setVolume(volume: Float) = guarded("Volume") { remote?.setVolume(volume) }
@@ -535,25 +548,36 @@ class PanelModel(val settings: LinuxSettings) {
      * (including "none"), so a track is asked about once; a failed request is not remembered.
      */
     suspend fun lyricsFor(track: LocalTrack): MaLyrics? {
-        val src = source.value ?: return null
-        if (!src.has(Capability.LYRICS)) return null
         val key = track.scrobbleId ?: track.id
         synchronized(lyricCache) { if (lyricCache.containsKey(key)) return lyricCache[key] }
-        val found = try {
-            val id = track.id.takeIf { it != track.scrobbleId }
-                ?: pickLyricMatch(
-                    src.search(listOfNotNull(track.artist, track.title).joinToString(" "), 12).tracks,
-                    track.title, track.artist,
-                )?.itemId
-            id?.let { src.lyrics(it) }?.takeIf { it.text.isNotBlank() }
+        val src = source.value
+        val library = try {
+            if (src == null || !src.has(Capability.LYRICS)) null else {
+                val id = track.id.takeIf { it != track.scrobbleId }
+                    ?: pickLyricMatch(
+                        src.search(listOfNotNull(track.artist, track.title).joinToString(" "), 12).tracks,
+                        track.title, track.artist,
+                    )?.itemId
+                id?.let { src.lyrics(it) }?.takeIf { it.text.isNotBlank() }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             return null
         }
+        // Jellyfin's own timed lyrics win. Without them, LRCLIB is asked (when allowed),
+        // and its answer is taken if it is timed, or if the library had nothing at all.
+        val online = if (library?.synced != true && settings.lyricsOnline.first()) {
+            runCatching {
+                lrclib.find(track.title, track.artist, track.album, (track.durationMs / 1000).toInt().takeIf { it > 0 })
+            }.getOrNull()?.takeIf { it.text.isNotBlank() && (it.synced || library == null) }
+        } else null
+        val found = online ?: library
         synchronized(lyricCache) { lyricCache[key] = found }
         return found
     }
+
+    private val lrclib = Lrclib()
 
     // ── The sleep timer ─────────────────────────────────────────────────────
 
@@ -596,7 +620,57 @@ class PanelModel(val settings: LinuxSettings) {
      * shorter one.
      */
     suspend fun playAlbum(album: MaItem, tracks: List<MaItem>, startIndex: Int = 0) =
-        guarded("Play") { queueAndPlay(album, tracks, startIndex) }
+        guarded("Play") { stopRadio(); queueAndPlay(album, tracks, startIndex) }
+
+    // ── Radio ───────────────────────────────────────────────────────────────
+
+    /**
+     * Start a radio from [seed] — a song, an album or an artist. A song plays first and
+     * the music like it follows; an album or an artist starts straight into its mix. The
+     * queue is topped up a few tracks before it runs out, for as long as the radio is on.
+     */
+    suspend fun startRadio(seed: MaItem) = guarded("Radio") {
+        val src = source.value ?: return@guarded
+        localRadio.forget()
+        val isTrack = seed.mediaType == "track"
+        if (isTrack) localRadio.remember(listOf(seed.itemId))
+        val batch = localRadio.next(LibraryRadioSource(src), seed, count = 16, exclude = setOf(seed.itemId))
+        val tracks = if (isTrack) listOf(seed) + batch else batch
+        if (tracks.isEmpty()) {
+            statusLine.value = "Radio: the library had nothing to play"
+            return@guarded
+        }
+        queueAndPlay(seed, tracks, 0)
+        radioSeed = tracks.last()
+        radio.value = RadioSession(seed.name, seed.mediaType)
+    }
+
+    fun stopRadio() {
+        radio.value = null
+        radioSeed = null
+    }
+
+    private fun radioTick(s: com.engabd.sendpin.audio.RemoteState?) {
+        if (radio.value == null || s == null || s.stopped) return
+        if (!radioNeedsMore(s.index, queue.value.size)) return
+        if (!radioFilling.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                val src = source.value ?: return@launch
+                val queued = queue.value.map { it.id }.toSet()
+                val batch = localRadio.next(LibraryRadioSource(src), radioSeed, count = 12, exclude = queued)
+                if (batch.isNotEmpty() && radio.value != null) {
+                    enqueue(batch, next = false)
+                    radioSeed = batch.last()
+                } else {
+                    // Nothing found (or nothing new): ask again in a while, not every poll.
+                    kotlinx.coroutines.delay(30_000)
+                }
+            } finally {
+                radioFilling.set(false)
+            }
+        }
+    }
 
     /** [tracks] as MPD queue entries: path mapped, the ones that will not map dropped. */
     private suspend fun mpdTracksFor(tracks: List<MaItem>): List<LocalTrack> {

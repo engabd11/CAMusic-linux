@@ -57,6 +57,8 @@ private fun panelSize(): Pair<Dp, Dp> {
 }
 
 fun main() = application {
+    // One image loader for the whole panel: memory and disk caches sized for a wall of covers.
+    coil3.compose.setSingletonImageLoaderFactory { context -> com.engabd.sendpin.linux.ui.panelImageLoader(context) }
     val settings = remember { LinuxSettings(LinuxSettings.defaultPath()) }
     val model = remember {
         PanelModel(settings).also { m ->

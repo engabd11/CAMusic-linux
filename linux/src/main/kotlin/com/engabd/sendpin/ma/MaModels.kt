@@ -555,8 +555,30 @@ data class MaQueueItem(
     val available: Boolean = true,
 )
 
-/** One timed line of an LRC lyric. */
-data class LyricLine(val atMs: Long, val text: String)
+/**
+ * One word of a word-timed lyric line: [text] carries its trailing space, so the words
+ * joined back together are the line. [estimated] marks a time spread across the line by
+ * length because the source only timed the line as a whole.
+ */
+data class LyricWord(
+    val atMs: Long,
+    val endMs: Long,
+    val text: String,
+    val estimated: Boolean = false,
+)
+
+/**
+ * One timed line of an LRC lyric.
+ *
+ * [words] is null for a line-synced source. [background] is a backing vocal (`[bg:]` in
+ * enhanced LRC), which the sheet draws smaller.
+ */
+data class LyricLine(
+    val atMs: Long,
+    val text: String,
+    val words: List<LyricWord>? = null,
+    val background: Boolean = false,
+)
 
 /**
  * Lyrics for a track, plain or LRC-timed.
@@ -568,6 +590,8 @@ data class LyricLine(val atMs: Long, val text: String)
 data class MaLyrics(
     val text: String,
     val synced: Boolean = false,
+    /** Where these came from when it is worth crediting — "LRCLIB". Null for the library's own. */
+    val source: String? = null,
 ) {
     /**
      * The lyric as timed lines. Plain lyrics come back as one line per row with a
@@ -576,28 +600,11 @@ data class MaLyrics(
      */
     val lines: List<LyricLine> by lazy {
         if (!synced) return@lazy text.lines().map { LyricLine(0, it.trim()) }
-        val out = mutableListOf<LyricLine>()
-        for (raw in text.lines()) {
-            val stamps = LRC_STAMP.findAll(raw).toList()
-            if (stamps.isEmpty()) continue
-            val body = raw.substring(stamps.last().range.last + 1).trim()
-            for (m in stamps) {
-                val (mm, ss, frac) = m.destructured
-                // The fraction is 2 or 3 digits (centi- or milliseconds).
-                val fracMs = when (frac.length) {
-                    0 -> 0L
-                    2 -> frac.toLong() * 10
-                    else -> frac.padEnd(3, '0').take(3).toLong()
-                }
-                out += LyricLine(mm.toLong() * 60_000 + ss.toLong() * 1_000 + fracMs, body)
-            }
-        }
-        out.sortedBy { it.atMs }
+        LrcParser.parse(text)
     }
 
-    private companion object {
-        val LRC_STAMP = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{2,3}))?]""")
-    }
+    /** Whether the source itself carries word timing on any line. */
+    val hasWordTiming: Boolean by lazy { synced && lines.any { l -> l.words != null && l.words.none { it.estimated } } }
 }
 
 /**

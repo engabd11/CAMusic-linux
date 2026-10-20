@@ -143,9 +143,15 @@ None of them touch playback.
 | `track_text_motion` | `true` | Title and artist glide over on a track change. |
 | `ambient_motion` | `true` | The album's colour blooms drift slowly behind the player and pages. |
 | `cover_rests_on_pause` | `true` | Paused, the cover settles back slightly and dims. |
-| `listening_mode` | `true` | While music plays and nobody touches the panel for `listening_delay_min` (default 3), the record takes the screen: a large living cover, the title set in a display face, a hairline of progress and the signal path. A tap brings the controls back. `listening_clock` shows the time; `listening_layout` is `classic` \| `vinyl` (a turning record with the cover as its label) \| `poster` (huge type, small cover) \| `cover` (the art alone). |
+| `listening_mode` | `true` | While music plays and nobody touches the panel for `listening_delay_min` (default 3), the record takes the screen: a large living cover, the title set in a display face, a hairline of progress and the signal path. A tap brings the controls back. `listening_clock` shows the time; `listening_layout` is `classic` \| `vinyl` (a turning record with the cover as its label) \| `poster` (huge type, small cover) \| `cover` (the art alone) \| `lyrics` (the words, rolling and filled as they are sung). |
 | `library_retap_home` | `true` | Tapping **Library** while browsing an album or artist returns to the library's home page. |
-| `page_transitions` | `true` | Library pages slide; tabs cross-fade. |
+| `page_transitions` | `true` | Library pages slide; tabs sink back and come forward. |
+| `shared_cover_motion` | `true` | The cover you tap grows into its album or artist page and shrinks back on Back. Needs `page_transitions`. |
+| `home_hero` | `true` | A carousel of new and rediscovered records, one at a time and large, at the top of the library's Home. Moves on by itself; swipe for the next. |
+| `albums_view` | `grid` | `grid` \| `flow` — the Albums page as a grid, or as a Cover Flow that turns a record every few seconds when left alone. |
+| `karaoke_fill` | `true` | The line being sung fills word by word. Word timing comes from the lyrics when they carry it (enhanced LRC, Jellyfin 10.11 cues), otherwise it is spread across each line. |
+| `lyrics_online` | `true` | When Jellyfin has no timed lyrics, ask [LRCLIB](https://lrclib.net) (title, artist, album and length are sent). |
+| `listening_lyrics` | `true` | The line being sung and the next one, under the record in every Listening mode layout. |
 
 ## Build, run, test
 

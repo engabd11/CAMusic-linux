@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -93,9 +94,11 @@ internal fun libraryTrackActions(
     onAddToQueue: () -> Unit,
     onAlbum: () -> Unit,
     onArtist: () -> Unit,
+    onRadio: (() -> Unit)? = null,
 ): List<MenuAction> = buildList {
     add(MenuAction("Play next", Icons.Default.SkipNext, run = onPlayNext))
     add(MenuAction("Add to queue", Icons.AutoMirrored.Filled.PlaylistAdd, run = onAddToQueue))
+    if (onRadio != null) add(MenuAction("Start radio", Icons.Default.Radio, run = onRadio))
     if (hasAlbum) add(MenuAction("Go to album", Icons.Default.Album, run = onAlbum))
     if (hasArtist) add(MenuAction("Go to artist", Icons.Default.Person, run = onArtist))
 }

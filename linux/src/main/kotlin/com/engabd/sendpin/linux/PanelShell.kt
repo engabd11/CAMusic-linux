@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.engabd.sendpin.linux.ui.TabSwitch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -90,11 +91,14 @@ private const val PLAYER_WEIGHT_WIDE = 0.42f
  * Portrait: the overlay shell (PortraitShell) — full-screen cover over tabs.
  */
 @Composable
-fun PanelShell(model: PanelModel, layoutMode: LayoutMode) {
-    var tab by remember { mutableStateOf(PanelTab.LIBRARY) }
+fun PanelShell(
+    model: PanelModel,
+    layoutMode: LayoutMode,
     // Hoisted above both layouts and the tab switch: the library keeps its page and
     // its loaded shelves while the Queue or Lights tab is showing.
-    val libraryState = remember { LibraryState() }
+    libraryState: LibraryState = remember { LibraryState() },
+) {
+    var tab by remember { mutableStateOf(PanelTab.LIBRARY) }
 
     val bigReadouts by model.settings.bigReadouts.collectAsState(initial = false)
     CompositionLocalProvider(LocalBigReadouts provides bigReadouts) {
@@ -171,7 +175,7 @@ private fun LandscapeShell(
                             }
                         }
                         if (pageTransitions) {
-                            Crossfade(tab, Modifier.fillMaxSize(), tween(180), label = "tab") { tabPane(it) }
+                            TabSwitch(tab, Modifier.fillMaxSize()) { tabPane(it) }
                         } else {
                             tabPane(tab)
                         }

@@ -166,7 +166,8 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
     val mood = LocalColourMood.current
     val feed = remember(source, albums, style, active, mood) {
         val src = source
-        if (!active || src == null) null else SlideFeed(src, albums, style, mood = mood, meta = { ids ->
+        // The art wall draws straight from the library and needs no prepared slides.
+        if (!active || src == null || style == "wall") null else SlideFeed(src, albums, style, mood = mood, meta = { ids ->
             SlideMetaClient.fetch(
                 metaHttp,
                 model.jfUrl.value,
@@ -197,7 +198,17 @@ fun ScreensaverHost(model: PanelModel, gate: IdleGate) {
         enter = fadeIn(tween(1_400)),
         exit = fadeOut(tween(600)),
     ) {
-        Gallery(
+        if (style == "wall") ArtWall(
+            source = source,
+            clock = clock,
+            holdToPlay = holdToPlay,
+            captures = captures,
+            onTap = ::dismiss,
+            onHold = { id ->
+                scope.launch { model.playAlbumById(id) }
+                dismiss()
+            },
+        ) else Gallery(
             feed = feed,
             style = style,
             slideMs = slideS.coerceAtLeast(5) * 1_000,

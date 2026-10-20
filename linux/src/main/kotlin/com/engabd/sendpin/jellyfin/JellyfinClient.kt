@@ -734,9 +734,8 @@ class JellyfinClient(
             lines.any { it["Start"] != null } -> MaLyrics(
                 text = lines.joinToString("\n") { l ->
                     val ms = (l.long("Start") ?: 0L) / 10_000
-                    "[%02d:%02d.%02d]%s".format(
-                        ms / 60_000, (ms / 1000) % 60, (ms % 1000) / 10, l.str("Text").orEmpty(),
-                    )
+                    // Jellyfin 10.11 adds word `Cues`; they go through as enhanced LRC.
+                    lrcStamp('[', ms, ']') + jellyfinLineBody(l.str("Text").orEmpty(), jellyfinCues(l))
                 },
                 synced = true,
             )
@@ -887,3 +886,43 @@ class JellyfinClient(
 private fun JsonArray?.orEmpty(): List<JsonElement> = this ?: emptyList()
 
 private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
+
+/** One word cue from Jellyfin 10.11+: a character range of the line and when it is sung. */
+internal data class JellyfinCue(val position: Int, val endPosition: Int, val startMs: Long, val endMs: Long?)
+
+private fun jellyfinCues(line: JsonObject): List<JellyfinCue> =
+    (line["Cues"] as? JsonArray).orEmpty().mapNotNull { c ->
+        val o = c as? JsonObject ?: return@mapNotNull null
+        val pos = o["Position"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+        val end = o["EndPosition"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+        val start = o["Start"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+        JellyfinCue(pos, end, start / 10_000, o["End"]?.jsonPrimitive?.longOrNull?.let { it / 10_000 })
+    }
+
+internal fun lrcStamp(open: Char, ms: Long, close: Char): String =
+    "%c%02d:%02d.%02d%c".format(open, ms / 60_000, (ms / 1000) % 60, (ms % 1000) / 10, close)
+
+/**
+ * A line's LRC body: plain [text] when Jellyfin gave no word cues, else enhanced LRC
+ * (`<mm:ss.xx>word `) so the karaoke fill gets the library's own word timing. Cues that do
+ * not fit the text are ignored rather than trusted.
+ */
+internal fun jellyfinLineBody(text: String, cues: List<JellyfinCue>): String {
+    val valid = cues
+        .filter { it.position in text.indices && it.endPosition in (it.position + 1)..text.length }
+        .sortedBy { it.position }
+    if (valid.isEmpty()) return text
+    val sb = StringBuilder()
+    var at = 0
+    for ((i, c) in valid.withIndex()) {
+        if (c.position < at) continue
+        sb.append(text, at, c.position)
+        sb.append(lrcStamp('<', c.startMs, '>'))
+        val until = valid.getOrNull(i + 1)?.position?.coerceAtLeast(c.endPosition) ?: c.endPosition
+        sb.append(text, c.position, until)
+        at = until
+    }
+    sb.append(text, at, text.length)
+    valid.last().endMs?.let { sb.append(lrcStamp('<', it, '>')) }
+    return sb.toString()
+}
