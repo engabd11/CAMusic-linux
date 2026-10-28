@@ -53,7 +53,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import com.engabd.sendpin.linux.ui.detectFingerVerticalDrag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -385,7 +385,7 @@ private fun NowPlayingCover(
             .fillMaxSize()
             .offset { IntOffset(0, offsetPx.roundToInt()) }
             .pointerInput(Unit) {
-                detectVerticalDragGestures(
+                detectFingerVerticalDrag(
                     onDragStart = { dragPx = 0f; upTravel = 0f; dragging = true },
                     onDragEnd = {
                         dragging = false
@@ -778,7 +778,7 @@ private fun MiniPlayerBar(model: PanelModel, onExpand: () -> Unit) {
             .glassSurface(shape, inkOn(0.07f), border = Hairline)
             .clickable { onExpand() }
             .pointerInput(Unit) {
-                detectVerticalDragGestures(
+                detectFingerVerticalDrag(
                     onDragStart = { upTravel = 0f },
                     onDragEnd = { if (expandRequested(upTravel, expandPx)) onExpand() },
                     onDragCancel = { upTravel = 0f },

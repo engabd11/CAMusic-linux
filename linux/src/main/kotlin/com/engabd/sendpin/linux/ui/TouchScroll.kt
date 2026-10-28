@@ -4,13 +4,17 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -94,11 +98,7 @@ fun Modifier.touchDragScroll(
 
                 // Wait for slop before consuming anything — this is what keeps a tap on a
                 // tile or row working: only a real drag reaches past this point.
-                val slopChange = if (orientation == Orientation.Vertical) {
-                    awaitVerticalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
-                } else {
-                    awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
-                }
+                val slopChange = awaitFingerSlop(down, orientation)?.also { it.consume() }
 
                 if (slopChange != null) {
                     velocityTracker.addPosition(slopChange.uptimeMillis, slopChange.position)
@@ -127,6 +127,46 @@ fun Modifier.touchDragScroll(
             }
         }
     }
+}
+
+/** How far a finger may roll during a tap before a drag takes the gesture — Android's 8 dp, plus room for a thumb. */
+internal val FingerSlop = 12.dp
+
+/**
+ * Waits until [down]'s finger has travelled [FingerSlop] along [orientation] and returns that
+ * change, unconsumed; null when it lifted first or another handler took it.
+ *
+ * Compose's own slop waits (`detectVerticalDragGestures`, `await…TouchSlopOrCancellation`)
+ * start a drag from this panel's mouse-typed fingers after about 3 px, whatever
+ * `ViewConfiguration.touchSlop` says (measured on the station, 1.12.1). A tap on play
+ * that rolled that far went to the Now Playing page's swipe-down instead — the page dipped
+ * and the button did nothing.
+ */
+internal suspend fun AwaitPointerEventScope.awaitFingerSlop(
+    down: PointerInputChange,
+    orientation: Orientation,
+): PointerInputChange? {
+    val slop = FingerSlop.toPx()
+    while (true) {
+        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return null
+        if (!change.pressed || change.isConsumed) return null
+        val travel = change.position - down.position
+        if (abs(if (orientation == Orientation.Vertical) travel.y else travel.x) > slop) return change
+    }
+}
+
+/** `detectVerticalDragGestures`, but a drag only after [FingerSlop] — see [awaitFingerSlop]. */
+internal suspend fun PointerInputScope.detectFingerVerticalDrag(
+    onDragStart: (Offset) -> Unit = {},
+    onDragEnd: () -> Unit = {},
+    onDragCancel: () -> Unit = {},
+    onVerticalDrag: (change: PointerInputChange, dragAmount: Float) -> Unit,
+) = awaitEachGesture {
+    val down = awaitFirstDown(requireUnconsumed = false)
+    val start = awaitFingerSlop(down, Orientation.Vertical) ?: return@awaitEachGesture
+    onDragStart(down.position)
+    onVerticalDrag(start, start.positionChange().y)
+    if (verticalDrag(start.id) { onVerticalDrag(it, it.positionChange().y) }) onDragEnd() else onDragCancel()
 }
 
 /**
