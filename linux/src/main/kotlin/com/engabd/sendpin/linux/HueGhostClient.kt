@@ -105,7 +105,7 @@ class HueGhostClient(
         val running: Boolean,
         /** Sync is switched on, whether or not it is moving this second; null on a HueGhost too old to say. */
         val enabled: Boolean? = null,
-        /** The lights follow music and HueGhost times music separately: Timing sets `music_offset_s`. */
+        /** HueGhost is timing a song by its music offset (`music.in_use`): Timing sets `music_offset_s`. */
         val musicTiming: Boolean = false,
         val mode: String?,
         val intensity: String?,
@@ -166,9 +166,9 @@ class HueGhostClient(
                     enabled = root["enabled"]?.jsonPrimitive?.booleanOrNull,
                     mode = s("mode"),
                     intensity = s("intensity"),
-                    // HueGhost 2.10+ keeps a timing of its own for music (`music.offset_s`),
-                    // used instead of `offset_s` whenever the lights follow music.
-                    musicTiming = s("mode") == "music" && root["music"] is kotlinx.serialization.json.JsonObject,
+                    // HueGhost 2.13.5+ says when `offset_s` is its music offset: while a song
+                    // plays, whatever Hue Sync's mode (a film in Music mode keeps the film one).
+                    musicTiming = root["music"]?.jsonObject?.get("in_use")?.jsonPrimitive?.booleanOrNull == true,
                     followItem = root["follow"]?.jsonObject?.get("item")
                         ?.jsonPrimitive?.contentOrNull,
                     offsetS = root["offset_s"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull(),

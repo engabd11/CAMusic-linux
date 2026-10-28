@@ -230,8 +230,8 @@ fun LightsPane(modifier: Modifier, model: PanelModel) {
 
             OffsetCard(
                 offset = status?.offsetS ?: 0.0,
-                // In music, HueGhost times the lights by its music offset, not the film one;
-                // setting `offset_s` there changed nothing you could see (or hear).
+                // Set the offset HueGhost is using: its music one while a song plays, else
+                // the film one. Setting the other changed nothing you could see (or hear).
                 onSet = { v ->
                     status = status?.copy(offsetS = v)
                     act { if (status?.musicTiming == true) hg.set(musicOffsetS = v) else hg.set(offsetS = v) }

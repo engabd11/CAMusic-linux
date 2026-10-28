@@ -76,9 +76,12 @@ class HueGhostClientTest {
 
     @Test
     fun musicTimingSetsTheMusicOffset() {
-        val st = HueGhostClient.parseStatus("""{"enabled": true, "state": "syncing", "mode": "music", "offset_s": 0.1, "music": {"offset_s": 0.1}}""")!!
+        // A song in Video mode still uses the music offset; a film in Music mode, the film one.
+        val st = HueGhostClient.parseStatus("""{"enabled": true, "state": "syncing", "mode": "video", "offset_s": 0.1, "music": {"offset_s": 0.1, "in_use": true}}""")!!
         kotlin.test.assertEquals(true, st.musicTiming)
         kotlin.test.assertEquals("{\"music_offset_s\":0.25}", HueGhostClient.setBody(musicOffsetS = 0.25))
-        kotlin.test.assertEquals(false, HueGhostClient.parseStatus("""{"mode": "video", "music": {}}""")!!.musicTiming)
+        kotlin.test.assertEquals(false, HueGhostClient.parseStatus("""{"mode": "music", "music": {"in_use": false}}""")!!.musicTiming)
+        // HueGhost before 2.13.5 does not say: the film offset, as before 1.3.8.
+        kotlin.test.assertEquals(false, HueGhostClient.parseStatus("""{"mode": "music", "music": {"offset_s": 0.1}}""")!!.musicTiming)
     }
 }
